@@ -1,0 +1,47 @@
+{
+  "name": "wrapsynth",
+  "version": "1.0.0",
+  "description": "Privacy-preserving Monero bridge to Ethereum using ZK proofs",
+  "scripts": {
+    "compile": "forge build",
+    "test": "forge test",
+    "test:vvv": "forge test -vvv",
+    "snapshot": "forge snapshot",
+    "coverage": "forge coverage",
+    "fmt": "forge fmt",
+    "deploy:gnosis": "forge script script/DeployGnosis.s.sol:DeployGnosis --rpc-url $GNOSIS_RPC_URL --broadcast --verify",
+    "deploy:gnosis:dry": "forge script script/DeployGnosis.s.sol:DeployGnosis --rpc-url $GNOSIS_RPC_URL",
+    "test:e2e": "forge script script/E2ETest.s.sol:E2ETest --fork-url $GNOSIS_RPC_URL -vvv",
+    "test:e2e:broadcast": "forge script script/E2ETest.s.sol:E2ETest --rpc-url $GNOSIS_RPC_URL --broadcast",
+    "deploy:test:all": "node scripts/deployAndTestAll.js"
+  },
+  "keywords": [
+    "monero",
+    "bridge",
+    "zk-snark",
+    "plonk",
+    "ethereum",
+    "unichain"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@uniswap/v4-core": "^1.0.2",
+    "@uniswap/v4-periphery": "^1.0.3"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^2.0.0",
+    "@openzeppelin/contracts": "^5.0.0",
+    "@redstone-finance/evm-connector": "0.8.0",
+    "@redstone-finance/sdk": "^0.9.0",
+    "axios": "^1.13.4",
+    "bs58": "^5.0.0",
+    "circomlibjs": "^0.1.7",
+    "dotenv": "^16.4.0",
+    "ethers": "5.7.2",
+    "js-sha3": "^0.9.0",
+    "merkletreejs": "^0.6.0",
+    "monero-javascript": "^0.8.4",
+    "snarkjs": "^0.7.0"
+  }
+}
