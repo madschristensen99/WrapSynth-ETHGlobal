@@ -51,6 +51,41 @@ export const LP_SERVER_CONFIG = {
     }
 };
 
+// Uniswap Swap Configuration (Base Sepolia)
+// The Swap tab talks DIRECTLY to the on-chain Uniswap V3 contracts (QuoterV2 +
+// SwapRouter02) — NOT the Trading API. The Trading API returns 404 ResourceNotFound
+// for custom Base Sepolia pools (its routing backend doesn't index them), so it cannot
+// quote tWSXMR↔WETH on testnet. The on-chain pool exists and is seeded, so we route
+// through it ourselves. (proxy/ + swap-test/ remain in the repo for a future mainnet path.)
+export const UNISWAP_CONFIG = {
+    chainId: 84532,
+    chainIdHex: '0x14a34',
+    chainName: 'Base Sepolia Testnet',
+    rpcUrl: 'https://sepolia.base.org',
+    blockExplorer: 'https://sepolia.basescan.org',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    proxyUrl: 'http://localhost:3002', // unused by the Swap tab; kept for future mainnet/Trading-API path
+
+    // On-chain Uniswap V3 (Base Sepolia) — verified against Uniswap sdk-core addresses.ts
+    quoterV2:     '0xC5290058841028F1614F3A6F0F5816cAd0df5E27',
+    swapRouter02: '0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4',
+    weth:         '0x4200000000000000000000000000000000000006',
+    slippageBps:  50,    // 0.5% default slippage
+
+    tWSXMR: '0xdC8A3309e384d4b669feB350F97204c3e8404477',
+
+    // Token registry for omni-token swaps. WETH is the routing hub: every non-WETH token
+    // carries `wethPoolFee` = the fee tier of its WETH pool on Base Sepolia. Trades are
+    // single-hop when one side is WETH, else multi-hop via WETH. To add a token, append an
+    // entry whose WETH pool actually has liquidity at the given `wethPoolFee`.
+    tokens: {
+        tWSXMR: { address: '0xdC8A3309e384d4b669feB350F97204c3e8404477', symbol: 'tWSXMR', decimals: 8,  name: 'Test Wrapped Scaled XMR', wethPoolFee: 100 },
+        WETH:   { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH',   decimals: 18, name: 'Wrapped Ether', isWeth: true },
+        USDC:   { address: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', symbol: 'USDC',   decimals: 6,  name: 'USD Coin', wethPoolFee: 3000 },
+    },
+    permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+};
+
 // Token decimals
 export const DECIMALS = {
     wsXMR: 8,      // EVM wsXMR token decimals

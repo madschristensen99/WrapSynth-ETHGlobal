@@ -25,6 +25,7 @@ import {
     showMintTab,
     showBurnTab,
     showCoLPTab,
+    showSwapTab,
     saveActiveTab,
     populateVaults,
     showVaultInfo,
@@ -55,11 +56,12 @@ import {
 import { MintFlow } from './mintFlow.js';
 import { BurnFlow } from './burnFlow.js';
 import { getLPPanel } from './lpPanel.js';
+import { getSwapFlow } from './swapFlow.js?v=20260617';
 import { getPoolFlow } from './poolFlow.js';
 import { getCoLPFlow } from './coLPFlow.js';
 import { getDashboard } from './dashboard.js';
 import { hasActiveSwap, loadActiveSwap, loadActiveSwaps, saveActiveSwap, addOrUpdateActiveSwap, removeActiveSwap, clearActiveSwap, setSwapsArray, getActiveSwapByRequestId, saveToHistory } from './storage.js';
-import { CONTRACTS, SWAP_CONFIG } from './config.js';
+import { CONTRACTS, SWAP_CONFIG } from './config.js?v=20260617';
 import { displaySwapHistory } from './swapHistory.js';
 import { loadRecentActivity, startActivityFeedWatcher } from './activityFeed.js';
 import { updateProtocolStats } from './protocolStats.js';
@@ -297,6 +299,8 @@ async function init() {
         await handleCoLPTab();
     } else if (savedTab === 'lp') {
         await handleLpTab();
+    } else if (savedTab === 'swap') {
+        await handleSwapTab();
     }
 
     console.log('[SUCCESS] Phantom Agent ready');
@@ -319,6 +323,7 @@ function setupEventHandlers() {
     elements.tabBurn.addEventListener('click', () => showBurnTab());
     elements.tabCoLP.addEventListener('click', () => handleCoLPTab());
     elements.tabLp.addEventListener('click', () => handleLpTab());
+    elements.tabSwap.addEventListener('click', () => handleSwapTab());
     
     // Mint flow
     elements.startMint.addEventListener('click', handleStartMint);
@@ -1204,12 +1209,14 @@ async function handleLpTab() {
     elements.mintPanel.classList.add('hidden');
     elements.burnPanel.classList.add('hidden');
     elements.coLPPanel.classList.add('hidden');
+    elements.swapPanel.classList.add('hidden');
     elements.lpPanel.classList.remove('hidden');
-    
+
     // Update tab buttons
     elements.tabMint.classList.remove('active');
     elements.tabBurn.classList.remove('active');
     elements.tabCoLP.classList.remove('active');
+    elements.tabSwap.classList.remove('active');
     elements.tabLp.classList.add('active');
     saveActiveTab('lp');
 
@@ -1243,6 +1250,18 @@ async function handleLpTab() {
         // Show education view on error
         document.getElementById('lp-stats-view').classList.add('hidden');
         document.getElementById('lp-education-view').classList.remove('hidden');
+    }
+}
+
+/**
+ * Handle Swap tab — show panel and initialize the swap flow
+ */
+async function handleSwapTab() {
+    showSwapTab();
+    try {
+        await getSwapFlow().init();
+    } catch (err) {
+        console.error('[handleSwapTab] init error:', err);
     }
 }
 
