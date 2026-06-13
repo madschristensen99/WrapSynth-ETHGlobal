@@ -1,44 +1,45 @@
 {
-  "network": "Gnosis Chain Mainnet",
-  "chainId": 100,
-  "deploymentDate": "2026-06-11T19:20:00Z",
-  "rpcUrl": "https://rpc.gnosischain.com",
-  "wsUrl": "wss://rpc.gnosischain.com/wss",
-  "explorer": "https://gnosisscan.io",
+  "_comment": "ETHGlobal NYC 2026 deployment manifest for Base Sepolia. Addresses are populated by script/DeployBaseSepolia.s.sol; copy the values it prints into this file, then symlink/copy to deployment.json + frontend/deployment.json to point the UI at Base Sepolia.",
+  "network": "Base Sepolia",
+  "chainId": 84532,
+  "deploymentDate": "2026-06-13T06:28:00Z",
+  "rpcUrl": "https://sepolia.base.org",
+  "wsUrl": null,
+  "explorer": "https://sepolia.basescan.org",
   "contracts": {
-    "wsXMR": "0x30Aeb2A142744430fFD7D698D5C7C41769CE1279",
-    "wsXmrHub": "0x1fb8E7593B01bCdAE13e5b63e529f0e30a3ebD50",
-    "liquidityRouter": "0x6893f38e1DeEdCa95ce8995B01550921cEe353a1",
-    "swapHelper": "0xc9217D35b60Af1816bC7376804240D7DFEF569B2",
+    "wsXMR": "0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b",
+    "wsXmrHub": "0x65d3b7ff17dfa21fd6bb1553d51336b66548a1c3",
+    "liquidityRouter": null,
+    "swapHelper": null,
     "facets": {
-      "RedStoneOracleFacet": "0xa04bB8E8670c95Ae3017b959dcC7FAdA73A003dc",
-      "VaultFacet": "0x81Ef0aF3Eb50Df7241eaC44364dD64A0B754E6cB",
-      "MintFacet": "0x4e53Ad9223CcBd8953b53223fEB2161338B34D7C",
-      "BurnFacet": "0x4F072A55CE4c3d3B5F247C67beF037d4Cc525dD7",
-      "LiquidationFacet": "0x6FA84E83694002aBfA6fc198F430A14f96FdaA54",
-      "YieldFacet": "0xA676e2dC47F6B2639F54094190783bcbA8080947"
+      "ChainlinkDataStreamsOracleFacet": "0xe38af534e73995a0bfac54e40ed82bc2ffddd22d",
+      "VaultFacet": "0xeb2435f32deda1da7cbbcd95fc3c230b0b9fcd92",
+      "MintFacet": "0x09109e9f0c9b2affbdef61a541b6a5e3f70069a9",
+      "BurnFacet": "0xc957665b81b16934bf2df813c714fabf8a5878ae",
+      "LiquidationFacet": "0x42d2cc6db9b495d85922e95d90815f2244567c56",
+      "YieldFacet": "0x2ed9cc036bba0d976847367a378e6d8e0d3ca19a"
     }
   },
   "externalContracts": {
-    "sDAI": "0xaf204776c7245bF4147c2612BF6e5972Ee483701",
-    "wxDAI": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
-    "UniswapV3Factory": "0xe32F7dD7e3f098D518ff19A22d5f028e076489B1",
-    "UniswapV3PositionManager": "0xAE8fbE656a77519a7490054274910129c9244FA3",
-    "SwapHelper": "0xc9217D35b60Af1816bC7376804240D7DFEF569B2",
-    "Ed25519Helper": "0xaECa36374039EAb9e267B5daa48bAb9Ab0e50F00",
-    "PythOracle": "0x2880aB155794e7179c9eE2e38200202908C17B43"
+    "sDAI": "0x57cA07e0443c7Dc720CAd8AF63D8a6bBeDabD202",
+    "wxDAI": "0x7450C945A87F24DE0219D27f5d9A6EdeF6008CB3",
+    "chainlinkVerifierProxy": "0x8Ac491b7c118a0cdcF048e0f707247fD8C9575f9",
+    "linkToken": "0xE4aB69C077896252FAFBD49EFD26B5D171A32410",
+    "Ed25519Helper": "0x8D7DD0A1FD26A2602837B028afB7A1f1b21DA9E7"
+  },
+  "oracle": {
+    "type": "chainlink-data-streams",
+    "xmrUsdFeedId": "0x0003c70558bd921b1559d37b8e347797f121d1240e7386e68b2bee9b731b0833",
+    "ethUsdFeedId": "0x000359843a543ee2fe414dc14c7e7920ef10f4372990b79d6361cdc0dd1ba782",
+    "reportProxyUrl": "http://localhost:3002",
+    "dataEngineUrl": "https://api.testnet-dataengine.chain.link"
   },
   "pool": {
-    "uniswapV3Pool": "0x3b3f640b137ed13c79d2d51c54329816a6fbd85d",
+    "uniswapV3Pool": null,
     "feeTier": 3000
   },
-  "urls": {
-    "pythHermes": "https://hermes.pyth.network",
-    "moneroDaemon": "https://xmr-node.cakewallet.com:18081",
-    "moneroNetwork": "mainnet"
-  },
   "lpConfig": {
-    "defaultLpVault": "0x492c0b9F298cC49FE2644a2EBc6eA8dF848c72FB",
+    "defaultLpVault": null,
     "apiPort": 3001,
     "minCollateralRatio": 150,
     "liquidationThreshold": 120,
@@ -46,6 +47,15 @@
   },
   "verification": {
     "status": "verified",
-    "verifiedContracts": []
+    "verifiedContracts": [
+      "wsXMR",
+      "wsXmrHub",
+      "ChainlinkDataStreamsOracleFacet",
+      "VaultFacet",
+      "MintFacet",
+      "BurnFacet",
+      "LiquidationFacet",
+      "YieldFacet"
+    ]
   }
 }

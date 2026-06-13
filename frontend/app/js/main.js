@@ -427,7 +427,7 @@ async function handleUpdatePrices() {
         console.log('Manually updating oracle prices...');
         
         // Import and call the update function
-        const { updateOraclePrices } = await import('./redstoneWrapper.js?v=' + Date.now());
+        const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
         await updateOraclePrices();
         
         // Success feedback
@@ -438,7 +438,7 @@ async function handleUpdatePrices() {
         }, 2000);
         
         console.log('✅ Oracle prices updated successfully');
-        showSuccess('Prices Updated', 'Oracle prices have been updated with latest RedStone data.');
+        showSuccess('Prices Updated', 'Oracle prices have been updated with the latest Chainlink Data Streams report.');
         
     } catch (error) {
         console.error('Failed to update prices:', error);

@@ -6,7 +6,8 @@ import {IDataStreamsVerifier} from "../interfaces/external/IDataStreamsVerifier.
 /**
  * @title MockVerifierProxy
  * @notice Mock Chainlink Data Streams verifier proxy for testing
- * @dev Accepts any payload and returns an encoded ReportV3 with the pre-set price
+ * @dev Mirrors the real payload format: payload = abi.encode(reportContext, reportData, rs, ss, rawVs)
+ *      where reportData = abi.encode(ReportV3). "Verification" just unwraps reportData.
  */
 contract MockVerifierProxy is IDataStreamsVerifier {
     struct ReportV3 {
@@ -27,36 +28,36 @@ contract MockVerifierProxy is IDataStreamsVerifier {
         prices[feedId] = price;
     }
 
-    function verify(bytes calldata payload, bytes calldata) external payable returns (bytes memory) {
-        // Decode payload to extract feedId from reportData
-        // Payload format: abi.encode(bytes32[3] reportContext, bytes reportData)
-        (, bytes memory reportData) = abi.decode(payload, (bytes32[3], bytes));
-
-        // Skip 2-byte schema version, then read 32-byte feedId
-        require(reportData.length >= 34, "Invalid report data");
-        bytes32 feedId;
-        assembly {
-            feedId := mload(add(reportData, 34))
-        }
-
+    /// @notice Build a fullReport payload for a feed using the stored price and fresh timestamps
+    function buildPayload(bytes32 feedId) external view returns (bytes memory) {
         int192 price = prices[feedId];
         require(price != 0, "Price not set for feed");
 
-        // Use block.timestamp for all timestamp fields
-        // This ensures prices are always "fresh" in tests since block.timestamp doesn't auto-advance
         ReportV3 memory report = ReportV3({
             feedId: feedId,
             validFromTimestamp: uint32(block.timestamp),
             observationsTimestamp: uint32(block.timestamp),
             nativeFee: 0,
             linkFee: 0,
-            expiresAt: uint32(block.timestamp + 365 days), // Far future expiry
+            expiresAt: uint32(block.timestamp + 365 days),
             price: price,
             bid: price,
             ask: price
         });
 
-        return abi.encode(report);
+        bytes32[3] memory reportContext;
+        return abi.encode(reportContext, abi.encode(report));
     }
 
+    /// @inheritdoc IDataStreamsVerifier
+    function verify(bytes calldata payload, bytes calldata) external payable returns (bytes memory) {
+        (, bytes memory reportData) = abi.decode(payload, (bytes32[3], bytes));
+        require(reportData.length >= 32, "Invalid report data");
+        return reportData;
+    }
+
+    /// @inheritdoc IDataStreamsVerifier
+    function s_feeManager() external pure returns (address) {
+        return address(0);
+    }
 }

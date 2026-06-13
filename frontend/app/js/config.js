@@ -22,7 +22,32 @@ export const NETWORKS = {
             symbol: 'xDAI',
             decimals: 18
         }
+    },
+    baseSepolia: {
+        id: 84532,
+        name: 'Base Sepolia',
+        rpcUrls: [
+            'https://sepolia.base.org',
+            'https://base-sepolia-rpc.publicnode.com'
+        ],
+        blockExplorer: 'https://sepolia.basescan.org',
+        nativeCurrency: {
+            name: 'Ether',
+            symbol: 'ETH',
+            decimals: 18
+        }
     }
+};
+
+// Oracle configuration — Chainlink Data Streams for Base Sepolia deployment.
+// Stream IDs and verifier are confirmed against the testnet data engine
+// (see frontend/report-proxy/checkFeeds.js).
+export const ORACLE_CONFIG = {
+    reportProxyUrl: (typeof window !== 'undefined' && window.REPORT_PROXY_URL) || 'http://localhost:3002',
+    xmrFeedId: '0x0003c70558bd921b1559d37b8e347797f121d1240e7386e68b2bee9b731b0833', // XMR/USD-RefPrice-testnet-production
+    daiFeedId: '0x0003649272a19e143a7f4c2d98905b413e98dce81fb09287dcf4c513cba5cc72', // DAI/USD-RefPrice-DSSepolia-Premium-GlobalTestnet-003
+    verifierProxy: '0x8Ac491b7c118a0cdcF048e0f707247fD8C9575f9',
+    linkToken: '0xE4aB69C077896252FAFBD49EFD26B5D171A32410'
 };
 
 // Contract addresses - source of truth: ../../deployment.json
@@ -292,12 +317,13 @@ export const ABIS = {
         'error PoolNotInitialized()',
         'error PoolAlreadyInitialized()',
 
-        // Oracle (RedStoneOracleFacet — user can update prices with RedStone data)
+        // Oracle (ChainlinkDataStreamsOracleFacet — bytes[] = [XMR fullReport, DAI fullReport])
         'function updateOraclePrices(bytes[] calldata) external payable',
         'function getXmrPrice() external view returns (uint256)',
         'function getCollateralPrice() external view returns (uint256)',
         'function getXmrPriceWithAge(uint256 maxAge) external view returns (uint256)',
         'function getCollateralPriceWithAge(uint256 maxAge) external view returns (uint256)',
+        'function getUpdateFee(bytes[] calldata) external view returns (uint256)',
 
         // Events
         'event MintInitiated(bytes32 indexed requestId, address indexed initiator, address indexed recipient, address lpVault, uint256 xmrAmount, uint256 wsxmrAmount, uint256 feeAmount, bytes32 claimCommitment, bytes32 userPublicKey, uint256 timeout)',

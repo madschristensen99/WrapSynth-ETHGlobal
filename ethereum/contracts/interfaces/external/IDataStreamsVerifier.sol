@@ -8,4 +8,7 @@ pragma solidity ^0.8.28;
  */
 interface IDataStreamsVerifier {
     function verify(bytes calldata payload, bytes calldata parameterPayload) external payable returns (bytes memory verifierResponse);
+
+    /// @notice Returns the FeeManager (zero address on networks without fees)
+    function s_feeManager() external view returns (address);
 }

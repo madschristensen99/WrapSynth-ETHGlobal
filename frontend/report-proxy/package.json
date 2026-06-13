@@ -1,0 +1,14 @@
+{
+  "name": "wrapsynth-report-proxy",
+  "version": "1.0.0",
+  "description": "Signs Chainlink Data Streams API requests and serves fullReport blobs to the WrapSynth frontend",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "discover": "node discoverFeeds.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

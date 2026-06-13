@@ -67,7 +67,7 @@ export class BurnFlow {
 
     async updatePrices() {
         updateBurnProgress('evm-request', 'Updating XMR price onchain...');
-        const { updateOraclePrices } = await import('./redstoneWrapper.js?v=' + Date.now());
+        const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
         await updateOraclePrices();
         console.log('Oracle prices updated for burn');
     }

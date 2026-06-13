@@ -34,6 +34,33 @@ WrapSynth brings Monero's anonymity set to DeFi and DeFi liquidity to Monero. Us
 - ✅ 633-line solvency invariant test suite + audit regression suite
 - 🔄 Solana port in development (`solana/`)
 
+### Base Sepolia Deployment (ChainID 84532)
+
+| Contract | Address |
+|---|---|
+| wsXMR Token | [`0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b`](https://sepolia.basescan.org/address/0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b) |
+| wsXmrHub | [`0x65d3b7ff17dfa21fd6bb1553d51336b66548a1c3`](https://sepolia.basescan.org/address/0x65d3b7ff17dfa21fd6bb1553d51336b66548a1c3) |
+| MockWXDAI | [`0x7450C945A87F24DE0219D27f5d9A6EdeF6008CB3`](https://sepolia.basescan.org/address/0x7450C945A87F24DE0219D27f5d9A6EdeF6008CB3) |
+| MockSavingsDAI | [`0x57cA07e0443c7Dc720CAd8AF63D8a6bBeDabD202`](https://sepolia.basescan.org/address/0x57cA07e0443c7Dc720CAd8AF63D8a6bBeDabD202) |
+| Ed25519Helper | [`0x8D7DD0A1FD26A2602837B028afB7A1f1b21DA9E7`](https://sepolia.basescan.org/address/0x8D7DD0A1FD26A2602837B028afB7A1f1b21DA9E7) |
+
+<details>
+<summary>Facet addresses</summary>
+
+| Facet | Address |
+|---|---|
+| ChainlinkDataStreamsOracleFacet | [`0xe38af534e73995a0bfac54e40ed82bc2ffddd22d`](https://sepolia.basescan.org/address/0xe38af534e73995a0bfac54e40ed82bc2ffddd22d) |
+| VaultFacet | [`0xeb2435f32deda1da7cbbcd95fc3c230b0b9fcd92`](https://sepolia.basescan.org/address/0xeb2435f32deda1da7cbbcd95fc3c230b0b9fcd92) |
+| MintFacet | [`0x09109e9f0c9b2affbdef61a541b6a5e3f70069a9`](https://sepolia.basescan.org/address/0x09109e9f0c9b2affbdef61a541b6a5e3f70069a9) |
+| BurnFacet | [`0xc957665b81b16934bf2df813c714fabf8a5878ae`](https://sepolia.basescan.org/address/0xc957665b81b16934bf2df813c714fabf8a5878ae) |
+| LiquidationFacet | [`0x42d2cc6db9b495d85922e95d90815f2244567c56`](https://sepolia.basescan.org/address/0x42d2cc6db9b495d85922e95d90815f2244567c56) |
+| YieldFacet | [`0x2ed9cc036bba0d976847367a378e6d8e0d3ca19a`](https://sepolia.basescan.org/address/0x2ed9cc036bba0d976847367a378e6d8e0d3ca19a) |
+
+**Oracle config:** Chainlink Data Streams testnet — XMR/USD feed `0x0003c70558bd921b1559d37b8e347797f121d1240e7386e68b2bee9b731b0833`, ETH/USD feed `0x000359843a543ee2fe414dc14c7e7920ef10f4372990b79d6361cdc0dd1ba782`
+
+Full deployment manifest: [`deployment.base-sepolia.json`](./deployment.base-sepolia.json)
+</details>
+
 ### Original Deployed Contracts (Gnosis Chain, ChainID 100)
 
 | Contract | Address |

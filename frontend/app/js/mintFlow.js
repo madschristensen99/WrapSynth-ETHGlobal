@@ -205,7 +205,7 @@ export class MintFlow {
     }
 
     async updatePrices() {
-        const { updateOraclePrices } = await import('./redstoneWrapper.js?v=' + Date.now());
+        const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
         await updateOraclePrices();
         console.log('Prices updated, continuing with mint');
     }

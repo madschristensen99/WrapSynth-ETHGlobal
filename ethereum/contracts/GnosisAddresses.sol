@@ -9,8 +9,8 @@ pragma solidity ^0.8.28;
  */
 library GnosisAddresses {
     // Stablecoins
-    address public constant XDAI = 0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d; // Wrapped xDAI (wxDAI)
-    address public constant SDAI = 0xaf204776c7245bF4147c2612BF6e5972Ee483701; // Savings DAI (sDAI)
+    address public constant XDAI = 0x7450C945A87F24DE0219D27f5d9A6EdeF6008CB3; // Wrapped xDAI (wxDAI)
+    address public constant SDAI = 0x57cA07e0443c7Dc720CAd8AF63D8a6bBeDabD202; // Savings DAI (sDAI)
 
     // Uniswap V3 on Gnosis Chain (ChainID 100)
     // Official deployment by Gnosis team (April 2023, proposal #20)
