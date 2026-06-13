@@ -286,13 +286,44 @@ fi
 hdr "6. Keeper flag (onReport)"
 
 # The demo's MockVerifierProxy price ages out after the hub's 120s staleness
-# window; the real Chainlink Data Streams feed is always fresh. Re-push the same
-# crank price (0% deviation, so the guard passes) to refresh the timestamp right
-# before flagging, mirroring an always-fresh production oracle.
-echo "Refreshing demo oracle price so it is fresh at flag time..."
-(cd "$ETH_DIR" && node scripts/demo/pushPrices.js "$DEMO_CRANK_XMR_USD" "$DEMO_COLLATERAL_USD" >/dev/null) \
-  && ok "Demo oracle price refreshed (XMR=\$$DEMO_CRANK_XMR_USD)" \
-  || warn "Price refresh failed; flag may hit StalePrice"
+# window; the real Chainlink Data Streams feed is always fresh. We must refresh
+# it WITHOUT tripping the oracle facet's two guards:
+#   - _assertDeviation: within 90s of the last update, a new price must stay
+#     within MAX_PRICE_DEVIATION_BPS (20%) of the lagging EMA. Right after the
+#     crank ($150->$195) the EMA is still ~$158, so re-pushing $195 inside that
+#     window deviates ~23% and REVERTS (this is what makes a too-fast run fail).
+#   - _getXmrPriceFromStorage: reverts StalePrice once the price is >120s old.
+# Strategy: if the on-chain price is still fresh, skip the push entirely (the
+# next step runs well within 120s). Only push once the 90s deviation window has
+# cleared, waiting it out if we're caught in the middle.
+refresh_oracle_fresh() {
+  local what="$1" last now age wait
+  last="$(cast call "$HUB" "lastXmrPriceTimestamp()(uint256)" --rpc-url "$RPC" 2>/dev/null | awk '{print $1}')"
+  now="$(cast block latest --field timestamp --rpc-url "$RPC" 2>/dev/null | awk '{print $1}')"
+  if ! [[ "$last" =~ ^[0-9]+$ ]] || ! [[ "$now" =~ ^[0-9]+$ ]]; then
+    warn "Could not read oracle price age; attempting a refresh anyway"
+    (cd "$ETH_DIR" && node scripts/demo/pushPrices.js "$DEMO_CRANK_XMR_USD" "$DEMO_COLLATERAL_USD" >/dev/null) \
+      && ok "Demo oracle price refreshed before $what" \
+      || warn "Price refresh failed; $what may hit StalePrice"
+    return
+  fi
+  age=$(( now - last ))
+  if [ "$age" -lt 60 ]; then
+    ok "Oracle price is fresh (${age}s old) — flagging without a refresh (avoids the <90s EMA deviation guard)"
+    return
+  fi
+  if [ "$age" -lt 90 ]; then
+    wait=$(( 92 - age ))
+    echo "Oracle price is ${age}s old; waiting ${wait}s for the 90s deviation guard to clear before refreshing..."
+    sleep "$wait"
+  fi
+  echo "Refreshing demo oracle price before $what (deviation guard cleared)..."
+  (cd "$ETH_DIR" && node scripts/demo/pushPrices.js "$DEMO_CRANK_XMR_USD" "$DEMO_COLLATERAL_USD" >/dev/null) \
+    && ok "Demo oracle price refreshed before $what (XMR=\$$DEMO_CRANK_XMR_USD)" \
+    || warn "Price refresh failed; $what may hit StalePrice"
+}
+
+refresh_oracle_fresh "flag"
 
 FLAG_BEFORE="$(cast call "$REGISTRY" "flagCount()(uint256)" --rpc-url "$RPC" 2>/dev/null || echo 0)"
 echo "flagCount before: $FLAG_BEFORE"
@@ -352,11 +383,9 @@ if [ "${SKIP_LIQUIDATE:-0}" = "1" ]; then
   warn "Leaving vault flagged/undercollateralized as requested"
 else
   hdr "8. Liquidate the flagged vault"
-  # Refresh the mock oracle again (it ages out in 120s; production stays fresh).
-  echo "Refreshing demo oracle price before liquidation..."
-  (cd "$ETH_DIR" && node scripts/demo/pushPrices.js "$DEMO_CRANK_XMR_USD" "$DEMO_COLLATERAL_USD" >/dev/null) \
-    && ok "Demo oracle price refreshed before liquidation" \
-    || warn "Price refresh failed; liquidation may hit StalePrice"
+  # Refresh the mock oracle again (it ages out in 120s; production stays fresh),
+  # using the same guard-aware helper so we never trip the <90s deviation guard.
+  refresh_oracle_fresh "liquidation"
   echo "Running liquidate.js (burns wsXMR, seizes collateral at the liquidation bonus)..."
   if (cd "$ETH_DIR" && node scripts/demo/liquidate.js "$WALLET"); then
     ok "liquidate.js executed"

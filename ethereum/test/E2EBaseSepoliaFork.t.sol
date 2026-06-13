@@ -14,6 +14,7 @@ import {IOracleFacet} from "../contracts/interfaces/facets/IOracleFacet.sol";
 import {IDataStreamsVerifier} from "../contracts/interfaces/external/IDataStreamsVerifier.sol";
 import {IDataStreamsFeeManager} from "../contracts/interfaces/external/IDataStreamsFeeManager.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {BaseSepoliaAddresses} from "../contracts/BaseSepoliaAddresses.sol";
 
 /**
  * @title E2EBaseSepoliaFork
@@ -42,17 +43,17 @@ contract E2EBaseSepoliaForkTest is Test {
         vm.createSelectFork(rpcUrl);
 
         wsxmr = new wsXMR();
-        hub = new wsXmrHub(address(wsxmr), VERIFIER_PROXY);
+        hub = new wsXmrHub(address(wsxmr), VERIFIER_PROXY, BaseSepoliaAddresses.WETH);
 
         oracleFacet = new ChainlinkDataStreamsOracleFacet(
-            address(wsxmr), VERIFIER_PROXY, XMR_FEED_ID, ETH_FEED_ID
+            address(wsxmr), VERIFIER_PROXY, BaseSepoliaAddresses.WETH, XMR_FEED_ID, ETH_FEED_ID
         );
 
-        VaultFacet vaultFacet = new VaultFacet(address(wsxmr), VERIFIER_PROXY);
-        MintFacet mintFacet = new MintFacet(address(wsxmr), VERIFIER_PROXY);
-        BurnFacet burnFacet = new BurnFacet(address(wsxmr), VERIFIER_PROXY);
-        LiquidationFacet liquidationFacet = new LiquidationFacet(address(wsxmr), VERIFIER_PROXY);
-        YieldFacet yieldFacet = new YieldFacet(address(wsxmr), VERIFIER_PROXY);
+        VaultFacet vaultFacet = new VaultFacet(address(wsxmr), VERIFIER_PROXY, BaseSepoliaAddresses.WETH);
+        MintFacet mintFacet = new MintFacet(address(wsxmr), VERIFIER_PROXY, BaseSepoliaAddresses.WETH);
+        BurnFacet burnFacet = new BurnFacet(address(wsxmr), VERIFIER_PROXY, BaseSepoliaAddresses.WETH);
+        LiquidationFacet liquidationFacet = new LiquidationFacet(address(wsxmr), VERIFIER_PROXY, BaseSepoliaAddresses.WETH);
+        YieldFacet yieldFacet = new YieldFacet(address(wsxmr), VERIFIER_PROXY, BaseSepoliaAddresses.WETH);
 
         hub.registerFacets(
             address(vaultFacet),

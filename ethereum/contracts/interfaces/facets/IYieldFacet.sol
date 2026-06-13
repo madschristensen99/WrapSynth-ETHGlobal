@@ -10,7 +10,7 @@ interface IYieldFacet {
     
     event YieldHarvested(address indexed lpVault, uint256 yieldShares);
     event BuyAndBurnExecuted(
-        uint256 sDAISpent,
+        uint256 collateralSpent,
         uint256 wsxmrBurned,
         uint256 keeperReward,
         uint256 newGlobalDebtIndex

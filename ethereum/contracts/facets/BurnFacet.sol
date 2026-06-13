@@ -6,7 +6,7 @@ import {IBurnFacet} from "../interfaces/facets/IBurnFacet.sol";
 import {IwsXmrHub} from "../interfaces/core/IwsXmrHub.sol";
 import {Ed25519} from "../Ed25519.sol";
 import {YieldLogic} from "../libraries/YieldLogic.sol";
-import {GnosisAddresses} from "../GnosisAddresses.sol";
+import {CollateralHelpers} from "../libraries/CollateralHelpers.sol";
 
 contract BurnFacet is wsXmrStorage, IBurnFacet {
     
@@ -14,8 +14,8 @@ contract BurnFacet is wsXmrStorage, IBurnFacet {
     
     event BurnRequestsCleanedUp(address indexed vault, uint256 removed);
     
-    constructor(address _wsxmrToken, address _verifierProxy) 
-        wsXmrStorage(_wsxmrToken, _verifierProxy) 
+    constructor(address _wsxmrToken, address _verifierProxy, address _collateralToken) 
+        wsXmrStorage(_wsxmrToken, _verifierProxy, _collateralToken) 
     {}
     
     function requestBurn(uint256 wsxmrAmount, address lpVault, address user, bytes32 claimCommitment) external returns (bytes32) {
@@ -218,9 +218,9 @@ contract BurnFacet is wsXmrStorage, IBurnFacet {
         else globalPendingBurnDebt -= request.wsxmrAmount;
         
         if (safeReward > 0) {
-            pendingReturns[request.user][GnosisAddresses.SDAI] += safeReward;
-            globalPendingSDAI += safeReward;
-            emit ReturnQueued(request.user, GnosisAddresses.SDAI, safeReward);
+            pendingReturns[request.user][collateralToken] += safeReward;
+            globalPendingCollateral += safeReward;
+            emit ReturnQueued(request.user, collateralToken, safeReward);
         }
         
         request.status = BurnStatus.COMPLETED;
@@ -242,8 +242,8 @@ contract BurnFacet is wsXmrStorage, IBurnFacet {
         
         uint256 collateralPrice = _getCollateralPriceFromStorage();
         uint256 parValueUsd = (request.wsxmrAmount * request.xmrPriceAtRequest) / WSXMR_DECIMALS;
-        uint256 parDaiAmount = (parValueUsd * SDAI_DECIMALS) / collateralPrice;
-        uint256 parShares = _daiToShares(parDaiAmount);
+        uint256 parDaiAmount = (parValueUsd * COLLATERAL_DECIMALS) / collateralPrice;
+        uint256 parShares = CollateralHelpers.toShares(collateralToken, parDaiAmount);
 
         uint256 userBase = parShares < request.lockedCollateral
             ? parShares
@@ -262,9 +262,9 @@ contract BurnFacet is wsXmrStorage, IBurnFacet {
         if (globalPendingBurnDebt < request.wsxmrAmount) globalPendingBurnDebt = 0;
         else globalPendingBurnDebt -= request.wsxmrAmount;
 
-        pendingReturns[request.user][GnosisAddresses.SDAI] += userPayout;
-        globalPendingSDAI += userPayout;
-        emit ReturnQueued(request.user, GnosisAddresses.SDAI, userPayout);
+        pendingReturns[request.user][collateralToken] += userPayout;
+        globalPendingCollateral += userPayout;
+        emit ReturnQueued(request.user, collateralToken, userPayout);
         
         request.status = BurnStatus.SLASHED;
         emit BurnSlashed(requestId, request.user, userPayout);
@@ -316,8 +316,8 @@ contract BurnFacet is wsXmrStorage, IBurnFacet {
         
         uint256 collateralPrice = _getCollateralPriceFromStorage();
         uint256 parValueUsd = (request.wsxmrAmount * request.xmrPriceAtRequest) / WSXMR_DECIMALS;
-        uint256 parDaiAmount = (parValueUsd * SDAI_DECIMALS) / collateralPrice;
-        uint256 parShares = _daiToShares(parDaiAmount);
+        uint256 parDaiAmount = (parValueUsd * COLLATERAL_DECIMALS) / collateralPrice;
+        uint256 parShares = CollateralHelpers.toShares(collateralToken, parDaiAmount);
         
         uint256 userBase = parShares < request.lockedCollateral
             ? parShares
@@ -332,9 +332,9 @@ contract BurnFacet is wsXmrStorage, IBurnFacet {
         else globalPendingBurnDebt -= request.wsxmrAmount;
         
         // Pay par value to holder (no reward for force-settle)
-        pendingReturns[request.user][GnosisAddresses.SDAI] += userBase;
-        globalPendingSDAI += userBase;
-        emit ReturnQueued(request.user, GnosisAddresses.SDAI, userBase);
+        pendingReturns[request.user][collateralToken] += userBase;
+        globalPendingCollateral += userBase;
+        emit ReturnQueued(request.user, collateralToken, userBase);
         
         request.status = BurnStatus.SLASHED;
         emit BurnForceSettled(requestId, userBase);
@@ -388,13 +388,13 @@ contract BurnFacet is wsXmrStorage, IBurnFacet {
         // Compute off PAR directly, converting USD -> DAI via collateral price so the lock
         // is in the same units as the slash/settle side (which divide par USD by collateralPrice).
         uint256 parUsd = (wsxmrAmount * _getXmrPriceFromStorage()) / WSXMR_DECIMALS;
-        uint256 parDai = (parUsd * SDAI_DECIMALS) / _getCollateralPriceFromStorage();
+        uint256 parDai = (parUsd * COLLATERAL_DECIMALS) / _getCollateralPriceFromStorage();
 
         uint256 baseDai = (parDai * BURN_LOCK_RATIO) / RATIO_PRECISION; // buffer over par
-        baseLock = _daiToShares(baseDai);
+        baseLock = CollateralHelpers.toShares(collateralToken, baseDai);
 
         uint256 rewardDai = (parDai * _vaults[lpVault].burnRewardBps) / BPS_DENOMINATOR;
-        rewardLock = _daiToShares(rewardDai);
+        rewardLock = CollateralHelpers.toShares(collateralToken, rewardDai);
     }
     
     function meetsMinimumBurn(address lpVault, uint256 wsxmrAmount) external view returns (bool) {
@@ -448,7 +448,8 @@ contract BurnFacet is wsXmrStorage, IBurnFacet {
             vault.pendingDebt,
             globalDebtIndex,
             xmrPrice,
-            collateralPrice
+            collateralPrice,
+            collateralToken
         );
         
         if (yieldShares > 0) {
@@ -457,12 +458,8 @@ contract BurnFacet is wsXmrStorage, IBurnFacet {
         }
     }
     
-    function _daiToShares(uint256 daiAmount) internal view returns (uint256) {
-        (bool success, bytes memory data) = GnosisAddresses.SDAI.staticcall(
-            abi.encodeWithSignature("convertToShares(uint256)", daiAmount)
-        );
-        require(success && data.length >= 32, "convertToShares failed");
-        return abi.decode(data, (uint256));
+    function _assetsToShares(uint256 assets) internal view returns (uint256) {
+        return CollateralHelpers.toShares(collateralToken, assets);
     }
     
     function _cleanupBurnRequests(bytes32[] storage vaultBurns) internal returns (uint256 activeCount) {

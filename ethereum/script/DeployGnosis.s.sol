@@ -45,7 +45,7 @@ contract DeployGnosis is Script {
         console.log("============================================================");
         console.log("STEP 2: Deploying wsXmrHub");
         console.log("============================================================");
-        wsXmrHub hub = new wsXmrHub(address(wsxmr), VERIFIER);
+        wsXmrHub hub = new wsXmrHub(address(wsxmr), VERIFIER, SDAI);
         console.log("wsXmrHub deployed to:", address(hub));
         console.log("");
 
@@ -54,22 +54,22 @@ contract DeployGnosis is Script {
         console.log("============================================================");
         
         // RedStoneOracleFacet - uses off-chain signed price data
-        RedStoneOracleFacet oracleFacet = new RedStoneOracleFacet(address(wsxmr), VERIFIER);
+        RedStoneOracleFacet oracleFacet = new RedStoneOracleFacet(address(wsxmr), VERIFIER, SDAI);
         console.log("RedStoneOracleFacet deployed to:", address(oracleFacet));
         
-        VaultFacet vaultFacet = new VaultFacet(address(wsxmr), VERIFIER);
+        VaultFacet vaultFacet = new VaultFacet(address(wsxmr), VERIFIER, SDAI);
         console.log("VaultFacet deployed to:", address(vaultFacet));
         
-        MintFacet mintFacet = new MintFacet(address(wsxmr), VERIFIER);
+        MintFacet mintFacet = new MintFacet(address(wsxmr), VERIFIER, SDAI);
         console.log("MintFacet deployed to:", address(mintFacet));
         
-        BurnFacet burnFacet = new BurnFacet(address(wsxmr), VERIFIER);
+        BurnFacet burnFacet = new BurnFacet(address(wsxmr), VERIFIER, SDAI);
         console.log("BurnFacet deployed to:", address(burnFacet));
         
-        LiquidationFacet liquidationFacet = new LiquidationFacet(address(wsxmr), VERIFIER);
+        LiquidationFacet liquidationFacet = new LiquidationFacet(address(wsxmr), VERIFIER, SDAI);
         console.log("LiquidationFacet deployed to:", address(liquidationFacet));
         
-        YieldFacet yieldFacet = new YieldFacet(address(wsxmr), VERIFIER);
+        YieldFacet yieldFacet = new YieldFacet(address(wsxmr), VERIFIER, SDAI);
         console.log("YieldFacet deployed to:", address(yieldFacet));
         console.log("");
 
@@ -116,10 +116,10 @@ contract DeployGnosis is Script {
             uint160 sqrtPriceX96 = abi.decode(data, (uint160));
             if (sqrtPriceX96 == 0) {
                 console.log("Initializing pool at $390 XMR...");
-                bool sDAIIsToken0 = SDAI < address(wsxmr);
-                console.log("sDAI is token0:", sDAIIsToken0);
+                bool collateralIsToken0 = SDAI < address(wsxmr);
+                console.log("sDAI is token0:", collateralIsToken0);
                 console.log("XMR_PRICE:", XMR_PRICE);
-                uint160 targetSqrtPriceX96 = _priceToSqrtPriceX96(XMR_PRICE, sDAIIsToken0);
+                uint160 targetSqrtPriceX96 = _priceToSqrtPriceX96(XMR_PRICE, collateralIsToken0);
                 console.log("Calculated sqrtPriceX96:", targetSqrtPriceX96);
                 (bool ok,) = pool.call(abi.encodeWithSignature("initialize(uint160)", targetSqrtPriceX96));
                 require(ok, "Pool initialization failed");
@@ -192,7 +192,7 @@ contract DeployGnosis is Script {
         console.log("5. Test co-LP with testCoLPNow.js");
     }
 
-    function _priceToSqrtPriceX96(uint256 xmrPrice, bool sDAIIsToken0) internal pure returns (uint160) {
+    function _priceToSqrtPriceX96(uint256 xmrPrice, bool collateralIsToken0) internal pure returns (uint160) {
         // xmrPrice is in 1e18 (e.g., 390e18 for $390)
         // collateralPrice is 1e18 (sDAI ≈ $1)
         // 1 wsXMR (1e8) = (xmrPrice/collateralPrice) sDAI (in 1e18)
@@ -201,7 +201,7 @@ contract DeployGnosis is Script {
         uint256 sqrt1e10 = 100000; // sqrt(1e10) = 1e5
         uint256 sqrtPriceX96;
 
-        if (sDAIIsToken0) {
+        if (collateralIsToken0) {
             // price = wsXMR/sDAI = collateralPrice / (xmrPrice * 1e10)
             // sqrtPriceX96 = sqrt(collateralPrice / (xmrPrice * 1e10)) * 2^96
             sqrtPriceX96 = (sqrtCollateralPrice * (1 << 96)) / (sqrtXmrPrice * sqrt1e10);

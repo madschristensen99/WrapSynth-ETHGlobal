@@ -29,14 +29,15 @@ contract DeployAndTestRedStoneOracle is Script {
 
         // Deploy everything fresh
         wsXMR wsxmr = new wsXMR();
-        wsXmrHub hub = new wsXmrHub(address(wsxmr), address(0));
+        address collateral = address(0); // mock collateral for test
+        wsXmrHub hub = new wsXmrHub(address(wsxmr), address(0), collateral);
         
-        SimpleOracleFacet oracleFacet = new SimpleOracleFacet(address(wsxmr), address(0), deployer);
-        VaultFacet vaultFacet = new VaultFacet(address(wsxmr), address(0));
-        MintFacet mintFacet = new MintFacet(address(wsxmr), address(0));
-        BurnFacet burnFacet = new BurnFacet(address(wsxmr), address(0));
-        LiquidationFacet liquidationFacet = new LiquidationFacet(address(wsxmr), address(0));
-        YieldFacet yieldFacet = new YieldFacet(address(wsxmr), address(0));
+        SimpleOracleFacet oracleFacet = new SimpleOracleFacet(address(wsxmr), address(0), collateral, deployer);
+        VaultFacet vaultFacet = new VaultFacet(address(wsxmr), address(0), collateral);
+        MintFacet mintFacet = new MintFacet(address(wsxmr), address(0), collateral);
+        BurnFacet burnFacet = new BurnFacet(address(wsxmr), address(0), collateral);
+        LiquidationFacet liquidationFacet = new LiquidationFacet(address(wsxmr), address(0), collateral);
+        YieldFacet yieldFacet = new YieldFacet(address(wsxmr), address(0), collateral);
         
         hub.registerFacets(
             address(vaultFacet),

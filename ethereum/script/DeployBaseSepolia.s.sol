@@ -60,21 +60,22 @@ contract DeployBaseSepolia is Script {
         console.log("Balance:", deployer.balance / 1e15, "milli-ETH");
         console.log("");
 
-        // ---------- Phase A: collateral mock ----------
-        // On Base Sepolia we use real WETH (0x4200...) as XDAI
-        // SDAI must be an ERC4626 wrapper around WETH for VaultFacet compatibility
-        if (GnosisAddresses.SDAI.code.length == 0) {
-            console.log("Phase A: SDAI wrapper missing at GnosisAddresses.SDAI.");
-            console.log("Deploying MockSavingsDAI wrapping WETH...");
+        // ---------- Phase A: collateral mocks ----------
+        if (GnosisAddresses.XDAI.code.length == 0 || GnosisAddresses.SDAI.code.length == 0) {
+            console.log("Phase A: collateral mocks missing at GnosisAddresses constants.");
+            console.log("Deploying MockWXDAI + MockSavingsDAI...");
 
             vm.startBroadcast(deployerPrivateKey);
-            MockSavingsDAI sdai = new MockSavingsDAI(GnosisAddresses.XDAI);
+            MockWXDAI wxdai = new MockWXDAI();
+            MockSavingsDAI sdai = new MockSavingsDAI(address(wxdai));
             vm.stopBroadcast();
 
             console.log("");
-            console.log("MockSavingsDAI (wraps WETH):", address(sdai));
+            console.log("MockWXDAI:     ", address(wxdai));
+            console.log("MockSavingsDAI:", address(sdai));
             console.log("");
             console.log("ACTION REQUIRED: update contracts/GnosisAddresses.sol:");
+            console.log("  XDAI = <MockWXDAI address above>");
             console.log("  SDAI = <MockSavingsDAI address above>");
             console.log("Then re-run this script for Phase B.");
             return;

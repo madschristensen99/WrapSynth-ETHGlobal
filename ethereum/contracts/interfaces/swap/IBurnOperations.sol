@@ -18,11 +18,11 @@ import {IErrors} from "../IErrors.sol";
  * 
  * Failure modes:
  * - No LP responds: User calls abortBurn() to get wsXMR back,
- *   or forceSettleBurn() for guaranteed par sDAI at locked price
+ *   or forceSettleBurn() for guaranteed par collateral at locked price
  * - LP proposes but holder doesn't commit: resolveDeclinedProposal() after timeout
  *   (wsXMR restored to holder)
  * - LP doesn't reveal secret after commit: User calls claimSlashedCollateral()
- *   (holder receives par sDAI at locked price + reward)
+ *   (holder receives par collateral at locked price + reward)
  */
 interface IBurnOperations is IErrors {
     // Note: BurnRequest struct is defined in wsXmrStorage
@@ -46,7 +46,7 @@ interface IBurnOperations is IErrors {
     event BurnSlashed(bytes32 indexed requestId, address indexed user, uint256 collateralSeized);
     event BurnCancelled(bytes32 indexed requestId);
     event BurnAborted(bytes32 indexed requestId);
-    event BurnForceSettled(bytes32 indexed requestId, uint256 sDAIPayout);
+    event BurnForceSettled(bytes32 indexed requestId, uint256 collateralPayout);
     event BurnProposalDeclined(bytes32 indexed requestId);
     
     // ========== ERRORS ==========
@@ -101,7 +101,7 @@ interface IBurnOperations is IErrors {
     function finalizeBurn(bytes32 requestId, bytes32 secret) external;
     
     /// @notice Claim slashed collateral after LP commits but fails to reveal
-    /// @dev Holder receives par sDAI at locked price + reward
+    /// @dev Holder receives par collateral at locked price + reward
     /// @param requestId The burn request ID
     function claimSlashedCollateral(bytes32 requestId) external;
     
@@ -109,8 +109,8 @@ interface IBurnOperations is IErrors {
     /// @param requestId The burn request ID
     function abortBurn(bytes32 requestId) external;
     
-    /// @notice Holder force-settles a REQUESTED burn after timeout for guaranteed par sDAI.
-    /// @dev wsXMR stays burned. Holder receives par value in sDAI at locked price.
+    /// @notice Holder force-settles a REQUESTED burn after timeout for guaranteed par collateral.
+    /// @dev wsXMR stays burned. Holder receives par value in collateral at locked price.
     /// @param requestId The burn request ID
     function forceSettleBurn(bytes32 requestId) external;
     

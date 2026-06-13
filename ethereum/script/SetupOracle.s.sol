@@ -29,6 +29,7 @@ contract SetupOracle is Script {
         SimpleOracleFacet oracle = new SimpleOracleFacet(
             WSXMR,
             address(0), // No verifier needed for oracle
+            address(0), // No collateral token needed for oracle setup
             deployer
         );
         console.log("Oracle deployed at:", address(oracle));

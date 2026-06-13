@@ -8,24 +8,27 @@ pragma solidity ^0.8.28;
  *      Gnosis Chain has limited Chainlink feeds; verify availability at docs.chain.link.
  */
 library GnosisAddresses {
-    // Base Sepolia WETH (real wrapped ETH)
-    address public constant XDAI = 0x4200000000000000000000000000000000000006; // WETH
-    address public constant SDAI = 0xd25f4095f623916074255FE4294f6b8B4DEf5f24; // MockSavingsDAI wrapping WETH
+    // Stablecoins
+    address public constant XDAI = 0x7450C945A87F24DE0219D27f5d9A6EdeF6008CB3; // Wrapped xDAI (wxDAI)
+    address public constant SDAI = 0x57cA07e0443c7Dc720CAd8AF63D8a6bBeDabD202; // Savings DAI (sDAI)
 
-    // Uniswap V3 on Base Sepolia
-    address public constant UNI_V3_FACTORY = 0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24;
-    address public constant UNI_V3_POSITION_MANAGER = 0x27F971cb582BF9E50F397e4d29a5C7A34f11faA2;
-    address public constant UNI_V3_SWAP_ROUTER_02 = 0x94cc0aaC535CCdb3cC7858eE06e4f6F8E9db13a7;
-    address public constant UNI_V3_QUOTER_V2 = 0xC0816e52d6D6372098D1fC48F7b5c0942e0799bE;
-    address public constant UNI_V3_TICK_LENS = 0x4D328952b5820DA806Bf31f3a94754B0c0e37C3C;
-    address public constant UNI_V3_STAKER = address(0);
-    address public constant UNI_V3_MULTICALL = address(0);
+    // Uniswap V3 on Gnosis Chain (ChainID 100)
+    // Official deployment by Gnosis team (April 2023, proposal #20)
+    // Verified against Uniswap Accountability Committee deployments (July 2024)
+    address public constant UNI_V3_FACTORY = 0xe32F7dD7e3f098D518ff19A22d5f028e076489B1;
+    address public constant UNI_V3_POSITION_MANAGER = 0xAE8fbE656a77519a7490054274910129c9244FA3;
+    address public constant UNI_V3_SWAP_ROUTER_02 = 0xc6D25285D5C5b62b7ca26D6092751A145D50e9Be;
+    address public constant UNI_V3_QUOTER_V2 = 0x7E9cB3499A6cee3baBe5c8a3D328EA7FD36578f4;
+    address public constant UNI_V3_TICK_LENS = 0x8fe3D346B53dCA838B228e0e53aCdBED5DEC70Dc;
+    address public constant UNI_V3_STAKER = 0x8b5a954Fba566B157798C413d95028F4aB87F5E0;
+    address public constant UNI_V3_MULTICALL = 0x4dfa9a980efE4802E969AC33968E3d6E59B8a19e;
     
     // Backward compatibility alias
     address public constant UNISWAP_V3_ROUTER = UNI_V3_SWAP_ROUTER_02;
 
-    // Chainlink Data Streams (Base Sepolia)
-    address public constant VERIFIER_PROXY = 0x2ff561f946D3862B463dd38A8b53CfD881a9e294;
-    bytes32 public constant XMR_USD_FEED_ID = 0x00035e3ddda6c0b6caaa19d64c2f9f93e7e76e72a443b7877c0c7b15773fce32;
-    bytes32 public constant ETH_USD_FEED_ID = 0x000359843a543ee2fe414dc14c7e7920ef10f4372990b79d6361cdc0dd1ba782;
+    // Chainlink Data Feeds (Gnosis Chain — verify at https://docs.chain.link/data-feeds/price-feeds/addresses)
+    // NOTE: XMR/USD is not natively available on Gnosis Chain. Use a custom aggregator
+    //       or deploy on a chain where the feed exists (e.g., Ethereum mainnet).
+    address public constant XMR_USD_FEED = address(0); // TODO: configure before deployment
+    address public constant DAI_USD_FEED = 0x678df3415BB319E5E94Dc79B7c9ca72338C201C7; // DAI/USD on Gnosis Chain
 }

@@ -13,7 +13,7 @@ import {wsXMR} from "../contracts/wsXMR.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {wsXmrStorage} from "../contracts/core/wsXmrStorage.sol";
 import {Ed25519} from "../contracts/Ed25519.sol";
-import {GnosisAddresses} from "../contracts/GnosisAddresses.sol";
+import {BaseSepoliaAddresses} from "../contracts/BaseSepoliaAddresses.sol";
 
 contract MockVerifierProxy {
     function verify(bytes calldata) external pure returns (bool) {
@@ -22,6 +22,7 @@ contract MockVerifierProxy {
 }
 
 contract E2EComprehensiveTest is Test {
+    address constant WETH = BaseSepoliaAddresses.WETH;
     
     wsXmrHub public hub;
     wsXMR public wsxmr;
@@ -40,7 +41,7 @@ contract E2EComprehensiveTest is Test {
     bytes32 public testSecret = bytes32(uint256(123456789));
     
     function setUp() public {
-        string memory rpcUrl = vm.envOr("GNOSIS_RPC_URL", string("https://rpc.gnosischain.com"));
+        string memory rpcUrl = vm.envOr("GNOSIS_RPC_URL", string("https://sepolia.base.org"));
         vm.createSelectFork(rpcUrl);
         vm.warp(block.timestamp + 1 days);
         
@@ -53,14 +54,14 @@ contract E2EComprehensiveTest is Test {
         
         verifier = new MockVerifierProxy();
         wsxmr = new wsXMR();
-        hub = new wsXmrHub(address(wsxmr), address(verifier));
+        hub = new wsXmrHub(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH);
         
-        oracleFacet = new SimpleOracleFacet(address(wsxmr), address(verifier), address(this));
-        vaultFacet = new VaultFacet(address(wsxmr), address(verifier));
-        mintFacet = new MintFacet(address(wsxmr), address(verifier));
-        burnFacet = new BurnFacet(address(wsxmr), address(verifier));
-        liquidationFacet = new LiquidationFacet(address(wsxmr), address(verifier));
-        yieldFacet = new YieldFacet(address(wsxmr), address(verifier));
+        oracleFacet = new SimpleOracleFacet(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH, address(this));
+        vaultFacet = new VaultFacet(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH);
+        mintFacet = new MintFacet(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH);
+        burnFacet = new BurnFacet(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH);
+        liquidationFacet = new LiquidationFacet(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH);
+        yieldFacet = new YieldFacet(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH);
         
         hub.registerFacets(
             address(vaultFacet),
@@ -72,9 +73,6 @@ contract E2EComprehensiveTest is Test {
         );
         
         wsxmr.setHub(address(hub));
-
-        // Fund MockSavingsDAI wrapper with WETH so redeem() works
-        deal(GnosisAddresses.XDAI, GnosisAddresses.SDAI, 100000 ether);
         
         // Update prices after warp (before any vault operations)
         SimpleOracleFacet(address(hub)).updatePrices(390_00000000, 1_00000000);
@@ -87,10 +85,9 @@ contract E2EComprehensiveTest is Test {
         VaultFacet(address(hub)).setMintGriefingDeposit(0.001 ether);
         VaultFacet(address(hub)).setMintReadyBond(0.001 ether);
         
-        deal(GnosisAddresses.SDAI, lp, 100 ether);
-        // dealt SDAI directly
-        IERC20(GnosisAddresses.SDAI).approve(address(hub), 100 ether);
-        VaultFacet(address(hub)).depositShares(100 ether);
+        deal(WETH, lp, 100 ether);
+        IERC20(WETH).approve(address(hub), 100 ether);
+        VaultFacet(address(hub)).depositCollateral(100 ether);
         vm.stopPrank();
     }
     
