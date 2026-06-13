@@ -1,0 +1,14 @@
+{
+  "name": "wrapsynth-uniswap-swap-test",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Full Uniswap Trading API round-trip test for tWSXMR/WETH on Base Sepolia",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "node index.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "viem": "^2.7.0"
+  }
+}
