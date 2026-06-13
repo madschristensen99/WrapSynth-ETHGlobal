@@ -7,9 +7,9 @@
  * Flow:
  *   1. Seed prices  XMR=$150, collateral=$1  (via the mock verifier).
  *   2. Open a vault, deposit wxDAI collateral.
- *   3. Mint wsXMR targeting ~170% CR (mint requires >= 150%).
+ *   3. Mint wsXMR targeting ~150% CR (the protocol minimum / original allocation).
  *   4. Wait > 90s so the oracle deviation guard is bypassed.
- *   5. Crank XMR to $300 (2x) -> CR roughly halves to ~85% (< 120%).
+ *   5. Crank XMR up -> CR drops below the 120% liquidation threshold.
  *   6. Assert isVaultLiquidatable(vault) == true and print the liquidation math.
  *
  * After this, run the CRE workflow (cre workflow simulate) to flag the vault,
@@ -26,7 +26,7 @@ const CRANK_XMR_USD = process.env.DEMO_CRANK_XMR_USD || '300';
 const COLLATERAL_USD = process.env.DEMO_COLLATERAL_USD || '1';
 const COLLATERAL_ETH = process.env.DEMO_COLLATERAL_ETH || '0.003'; // wxDAI to deposit
 const MINT_DEPOSIT = process.env.DEMO_MINT_DEPOSIT || '0.001'; // griefing deposit + ready bond (each)
-const TARGET_CR_PCT = parseInt(process.env.DEMO_TARGET_CR_PCT || '170', 10);
+const TARGET_CR_PCT = parseInt(process.env.DEMO_TARGET_CR_PCT || '150', 10);
 const WAIT_SECONDS = parseInt(process.env.DEMO_WAIT_SECONDS || '95', 10);
 
 const E18 = ethers.constants.WeiPerEther;

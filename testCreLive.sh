@@ -239,13 +239,16 @@ ok "Wrote cre/.env (CRE_ETH_PRIVATE_KEY)"
 # ---------------------------------------------------------------------------
 hdr "4. Force an undercollateralized vault"
 
-# Demo knobs (override via env). Keep ETH usage low (reuse wxDAI + small mint
-# deposits) and crank to ~116% CR so the vault is liquidatable AND still has
-# enough collateral for a clean full liquidation afterwards.
+# Demo knobs (override via env). The vault opens at the protocol-minimum 150%
+# CR (the original imagined allocation); cranking XMR from $150 -> $195 drops it
+# to ~115% CR, which is liquidatable (< 120%) yet still has enough collateral
+# for a clean full liquidation afterwards. Keep ETH usage low (reuse wxDAI +
+# small mint deposits).
 export DEMO_COLLATERAL_ETH="${DEMO_COLLATERAL_ETH:-0.003}"
 export DEMO_MINT_DEPOSIT="${DEMO_MINT_DEPOSIT:-0.0002}"
 export DEMO_SEED_XMR_USD="${DEMO_SEED_XMR_USD:-150}"
-export DEMO_CRANK_XMR_USD="${DEMO_CRANK_XMR_USD:-220}"
+export DEMO_TARGET_CR_PCT="${DEMO_TARGET_CR_PCT:-150}"
+export DEMO_CRANK_XMR_USD="${DEMO_CRANK_XMR_USD:-195}"
 export DEMO_COLLATERAL_USD="${DEMO_COLLATERAL_USD:-1}"
 
 IS_LIQ="$(cast call "$HUB" "isVaultLiquidatable(address)(bool)" "$WALLET" --rpc-url "$RPC" 2>/dev/null || echo false)"
