@@ -123,7 +123,7 @@ export const DEPLOYMENTS = {
     BASE_SEPOLIA: {
         chainId: 84532,
         wrappedMonero: DC.wsXMR || '0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b',
-        wsXmrHub: DC.wsXmrHub || '0x65d3b7ff17dfa21fd6bb1553d51336b66548a1c3',
+        wsXmrHub: DC.wsXmrHub || '0x0454983E17b803a2C6ff0d98d5D58676525F4A92',
         oracleFacet: DF.ChainlinkDataStreamsOracleFacet || '0xe38af534e73995a0bfac54e40ed82bc2ffddd22d',
         vaultFacet: DF.VaultFacet || '0xeb2435f32deda1da7cbbcd95fc3c230b0b9fcd92',
         mintFacet: DF.MintFacet || '0x09109e9f0c9b2affbdef61a541b6a5e3f70069a9',

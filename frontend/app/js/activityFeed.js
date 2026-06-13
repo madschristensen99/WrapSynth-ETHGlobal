@@ -10,7 +10,7 @@ const HUB_EVENTS_ABI = parseAbi([
     'event MintFinalized(bytes32 indexed requestId, bytes32 secret)',
     'event MintCancelled(bytes32 indexed requestId)',
     'event BurnRequested(bytes32 indexed requestId, address indexed user, address indexed lpVault, uint256 wsxmrAmount, uint256 xmrAmount, uint256 rewardCollateral, bytes32 claimCommitment)',
-    'event HashProposed(bytes32 indexed requestId, bytes32 secretHash)',
+    'event HashProposed(bytes32 indexed requestId, bytes32 secretHash, bytes32 lpPublicSpendKey, bytes32 lpPublicViewKey)',
     'event BurnCommitted(bytes32 indexed requestId, uint256 deadline)',
     'event BurnFinalized(bytes32 indexed requestId, bytes32 secret, uint256 reward)',
     'event BurnSlashed(bytes32 indexed requestId, address indexed user, uint256 totalSeized)',
@@ -31,76 +31,54 @@ export async function loadRecentActivity() {
         const publicClient = getPublicClient();
         const currentBlock = await publicClient.getBlockNumber();
 
-        // Look back ~1 hour (~2000 blocks at 2s/block on Base Sepolia)
-        const lookbackBlocks = 2000n;
-        let fromBlock = currentBlock > lookbackBlocks ? currentBlock - lookbackBlocks : 0n;
+        // Look back ~24 hours on Base Sepolia (~43200 blocks at ~2s/block)
+        const totalLookback = 50000n;
+        const chunkSize = 1000n;
+        const fromBlock = currentBlock > totalLookback ? currentBlock - totalLookback : 0n;
 
         console.log('Fetching activity from block', fromBlock.toString(), 'to', currentBlock.toString());
 
         const hubAddress = CONTRACTS.hub;
 
-        // Fetch all relevant events in parallel from hub (diamond)
-        const [
-            mintInitiated,
-            mintFinalized,
-            mintCancelled,
-            burnRequested,
-            hashProposed,
-            burnCommitted,
-            burnFinalized,
-            burnSlashed,
-            burnCancelled,
-            vaultCreated,
-            collateralDeposited,
-            collateralWithdrawn,
-            coLPDeployed,
-            coLPUnwound,
-            coLPRebalanced
-        ] = await Promise.all([
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'MintInitiated', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'MintFinalized', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'MintCancelled', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'BurnRequested', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'HashProposed', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'BurnCommitted', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'BurnFinalized', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'BurnSlashed', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'BurnCancelled', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'VaultCreated', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'CollateralDeposited', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'CollateralWithdrawn', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'CoLPDeployed', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'CoLPUnwound', fromBlock, toBlock: 'latest' }),
-            publicClient.getContractEvents({ address: hubAddress, abi: HUB_EVENTS_ABI, eventName: 'CoLPRebalanced', fromBlock, toBlock: 'latest' })
-        ]);
+        // Build chunks to avoid RPC block-range limits
+        const chunks = [];
+        for (let from = fromBlock; from < currentBlock; from += chunkSize) {
+            const to = from + chunkSize > currentBlock ? currentBlock : from + chunkSize;
+            chunks.push({ from, to });
+        }
 
-        const totalEvents = mintInitiated.length + mintFinalized.length + mintCancelled.length +
-            burnRequested.length + hashProposed.length + burnCommitted.length + burnFinalized.length + burnSlashed.length + burnCancelled.length +
-            vaultCreated.length + collateralDeposited.length + collateralWithdrawn.length +
-            coLPDeployed.length + coLPUnwound.length + coLPRebalanced.length;
-        console.log('Found', totalEvents, 'total events');
+        // Fetch all hub events in chunks, batching 5-at-a-time to avoid rate limits
+        let allLogs = [];
+        const batchSize = 5;
+        for (let i = 0; i < chunks.length; i += batchSize) {
+            const batch = chunks.slice(i, i + batchSize);
+            const results = await Promise.all(
+                batch.map(({ from, to }) =>
+                    publicClient.getLogs({
+                        address: hubAddress,
+                        events: HUB_EVENTS_ABI,
+                        fromBlock: from,
+                        toBlock: to
+                    }).catch(err => {
+                        console.warn(`[Activity] Chunk ${from}-${to} failed:`, err.message || err);
+                        return [];
+                    })
+                )
+            );
+            for (const logs of results) {
+                allLogs = allLogs.concat(logs);
+            }
+        }
 
-        // Combine, tag, and sort by block number (newest first)
-        const allEvents = [
-            ...mintInitiated.map(e => ({ ...e, type: 'mintInitiated' })),
-            ...mintFinalized.map(e => ({ ...e, type: 'mintFinalized' })),
-            ...mintCancelled.map(e => ({ ...e, type: 'mintCancelled' })),
-            ...burnRequested.map(e => ({ ...e, type: 'burnRequested' })),
-            ...hashProposed.map(e => ({ ...e, type: 'hashProposed' })),
-            ...burnCommitted.map(e => ({ ...e, type: 'burnCommitted' })),
-            ...burnFinalized.map(e => ({ ...e, type: 'burnFinalized' })),
-            ...burnSlashed.map(e => ({ ...e, type: 'burnSlashed' })),
-            ...burnCancelled.map(e => ({ ...e, type: 'burnCancelled' })),
-            ...vaultCreated.map(e => ({ ...e, type: 'vaultCreated' })),
-            ...collateralDeposited.map(e => ({ ...e, type: 'collateralDeposited' })),
-            ...collateralWithdrawn.map(e => ({ ...e, type: 'collateralWithdrawn' })),
-            ...coLPDeployed.map(e => ({ ...e, type: 'coLPDeployed' })),
-            ...coLPUnwound.map(e => ({ ...e, type: 'coLPUnwound' })),
-            ...coLPRebalanced.map(e => ({ ...e, type: 'coLPRebalanced' }))
-        ].sort((a, b) => {
+        console.log('Found', allLogs.length, 'total logs');
+
+        // Tag and sort by block number (newest first)
+        const allEvents = allLogs.map(log => ({
+            ...log,
+            type: log.eventName.charAt(0).toLowerCase() + log.eventName.slice(1)
+        })).sort((a, b) => {
             const blockDiff = Number(b.blockNumber - a.blockNumber);
             if (blockDiff !== 0) return blockDiff;
-            // Same block: sort by log index descending
             return Number(b.logIndex - a.logIndex);
         });
 
@@ -419,14 +397,14 @@ export function startActivityFeedWatcher() {
 function formatBlocksAgo(blocks) {
     if (blocks === 0) return 'just now';
     if (blocks === 1) return '1 block ago';
-    if (blocks < 12) return `${blocks} blocks ago`; // < 1 min
-    
-    const minutes = Math.floor(blocks / 12); // ~5s per block
+    if (blocks < 30) return `${blocks} blocks ago`; // < 1 min on Base (~2s/block)
+
+    const minutes = Math.floor(blocks / 30); // Base Sepolia ~2s per block = ~30 blocks/min
     if (minutes < 60) return `${minutes}m ago`;
-    
+
     const hours = Math.floor(minutes / 60);
     if (hours < 24) return `${hours}h ago`;
-    
+
     const days = Math.floor(hours / 24);
     return `${days}d ago`;
 }

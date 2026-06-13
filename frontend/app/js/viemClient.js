@@ -25,15 +25,9 @@ let userAddress = null;
  * Initialize viem clients
  */
 function getTransport() {
-    // If MetaMask is available, use it for reads — bypasses CORS and rate limits entirely
-    if (typeof window !== 'undefined' && window.ethereum) {
-        try {
-            return custom(window.ethereum);
-        } catch (e) {
-            console.warn('[viemClient] MetaMask transport unavailable, falling back to HTTP');
-        }
-    }
-    // Fallback to HTTP RPCs for users without a wallet
+    // Always use HTTP RPCs for public reads so they always hit Base Sepolia,
+    // regardless of which chain the user's wallet happens to be on.
+    // Wallet provider is still used for walletClient (writes).
     const transports = NETWORKS.baseSepolia.rpcUrls.map(url => http(url));
     return fallback(transports, { rank: false });
 }
@@ -91,7 +85,7 @@ async function switchToBaseSepolia() {
     try {
         await window.ethereum.request({
             method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0x14a33' }], // 84532 in hex
+            params: [{ chainId: '0x14a34' }], // 84532 in hex
         });
     } catch (switchError) {
         // Chain not added, add it
@@ -99,7 +93,7 @@ async function switchToBaseSepolia() {
             await window.ethereum.request({
                 method: 'wallet_addEthereumChain',
                 params: [{
-                    chainId: '0x14a33',
+                    chainId: '0x14a34',
                     chainName: NETWORKS.baseSepolia.name,
                     nativeCurrency: NETWORKS.baseSepolia.nativeCurrency,
                     rpcUrls: NETWORKS.baseSepolia.rpcUrls,
