@@ -37,7 +37,7 @@ export const ORACLE_CONFIG = {
 
 // Contract addresses - source of truth: ../../deployment.json
 export const CONTRACTS = {
-    hub: DC.wsXmrHub || '0x65d3b7ff17dfa21fd6bb1553d51336b66548a1c3',
+    hub: DC.wsXmrHub || '0x0454983E17b803a2C6ff0d98d5D58676525F4A92',
     wsxmrToken: DC.wsXMR || '0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b',
     liquidityRouter: DC.liquidityRouter || '0x0F9172c037eC5dFFa940aFa357Ee0A52B5a08d71',
     sDAI: DE.sDAI || '0x57cA07e0443c7Dc720CAd8AF63D8a6bBeDabD202',
@@ -45,6 +45,9 @@ export const CONTRACTS = {
     // Default LP vault to use for mints (the active LP running the LP node)
     defaultLpVault: DLC.defaultLpVault || null
 };
+
+// Deployment block for event pagination
+export const DEPLOYMENT_BLOCK = D.deploymentBlock ? BigInt(D.deploymentBlock) : 0n;
 
 // LP Server Configuration
 export const LP_SERVER_CONFIG = {
@@ -317,7 +320,7 @@ export const ABIS = {
         'event MintFinalized(bytes32 indexed requestId, bytes32 secret)',
         'event MintCancelled(bytes32 indexed requestId)',
         'event BurnRequested(bytes32 indexed requestId, address indexed user, address indexed lpVault, uint256 wsxmrAmount, uint256 xmrAmount, uint256 rewardCollateral, bytes32 claimCommitment)',
-        'event HashProposed(bytes32 indexed requestId, bytes32 secretHash)',
+        'event HashProposed(bytes32 indexed requestId, bytes32 secretHash, bytes32 lpPublicSpendKey, bytes32 lpPublicViewKey)',
         'event BurnCommitted(bytes32 indexed requestId, uint256 deadline)',
         'event BurnFinalized(bytes32 indexed requestId, bytes32 secret, uint256 reward)',
         'event BurnSlashed(bytes32 indexed requestId, address indexed user, uint256 totalSeized)',

@@ -3,12 +3,13 @@
   "network": "Base Sepolia",
   "chainId": 84532,
   "deploymentDate": "2026-06-13T06:28:00Z",
+  "deploymentBlock": 42799844,
   "rpcUrl": "https://sepolia.base.org",
   "wsUrl": null,
   "explorer": "https://sepolia.basescan.org",
   "contracts": {
     "wsXMR": "0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b",
-    "wsXmrHub": "0x0454983e17b803a2c6ff0d98d5d58676525f4a92",
+    "wsXmrHub": "0x0454983E17b803a2C6ff0d98d5D58676525F4A92",
     "liquidityRouter": "0x0F9172c037eC5dFFa940aFa357Ee0A52B5a08d71",
     "swapHelper": null,
     "facets": {

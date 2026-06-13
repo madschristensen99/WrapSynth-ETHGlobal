@@ -56,12 +56,12 @@ import { MintFlow } from './mintFlow.js';
 import { BurnFlow } from './burnFlow.js';
 import { getLPPanel } from './lpPanel.js';
 import { getPoolFlow } from './poolFlow.js';
-import { getCoLPFlow } from './coLPFlow.js';
+import { getCoLPFlow } from './coLPFlow.js?v=2';
 import { getDashboard } from './dashboard.js';
 import { hasActiveSwap, loadActiveSwap, loadActiveSwaps, saveActiveSwap, addOrUpdateActiveSwap, removeActiveSwap, clearActiveSwap, setSwapsArray, getActiveSwapByRequestId, saveToHistory } from './storage.js';
 import { CONTRACTS, SWAP_CONFIG } from './config.js';
 import { displaySwapHistory } from './swapHistory.js?v=3';
-import { loadRecentActivity, startActivityFeedWatcher } from './activityFeed.js?v=3';
+import { loadRecentActivity, startActivityFeedWatcher } from './activityFeed.js?v=4';
 import { updateProtocolStats } from './protocolStats.js?v=3';
 
 // Global state
@@ -70,8 +70,14 @@ let currentBurnFlow = null;
 let mintProgressInterval = null;
 let cachedVaults = [];
 
-// Price cache with TTL to avoid API rate limits
+// Price caches with TTL to avoid API rate limits
 const priceCache = {
+    value: null,
+    timestamp: 0,
+    ttlMs: 5 * 60 * 1000 // 5 minutes
+};
+
+const ethPriceCache = {
     value: null,
     timestamp: 0,
     ttlMs: 5 * 60 * 1000 // 5 minutes
@@ -149,78 +155,168 @@ async function fetchXmrPrice(forceRefresh = false) {
 }
 
 /**
+ * Fetch ETH/USD price with caching and fallback sources.
+ * Tries CoinGecko first, then CoinCap.
+ */
+async function fetchEthPrice(forceRefresh = false) {
+    const now = Date.now();
+    if (!forceRefresh && ethPriceCache.value && (now - ethPriceCache.timestamp) < ethPriceCache.ttlMs) {
+        return ethPriceCache.value;
+    }
+
+    // Source 1: CoinGecko
+    try {
+        const response = await fetch(
+            'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
+            { signal: AbortSignal.timeout(5000) }
+        );
+        if (response.ok) {
+            const data = await response.json();
+            if (data.ethereum?.usd) {
+                const price = data.ethereum.usd;
+                ethPriceCache.value = price;
+                ethPriceCache.timestamp = now;
+                console.log('[PRICE] ETH CoinGecko:', price);
+                return price;
+            }
+        }
+    } catch (e) {
+        console.warn('[PRICE] ETH CoinGecko failed:', e.message);
+    }
+
+    // Source 2: CoinCap
+    try {
+        const response = await fetch(
+            'https://api.coincap.io/v2/assets/ethereum',
+            { signal: AbortSignal.timeout(5000) }
+        );
+        if (response.ok) {
+            const data = await response.json();
+            if (data.data?.priceUsd) {
+                const price = parseFloat(data.data.priceUsd);
+                ethPriceCache.value = price;
+                ethPriceCache.timestamp = now;
+                console.log('[PRICE] ETH CoinCap:', price);
+                return price;
+            }
+        }
+    } catch (e) {
+        console.warn('[PRICE] ETH CoinCap failed:', e.message);
+    }
+
+    if (ethPriceCache.value) {
+        console.warn('[PRICE] ETH using stale cached price:', ethPriceCache.value);
+        return ethPriceCache.value;
+    }
+
+    console.error('[PRICE] All ETH price sources failed');
+    return null;
+}
+
+/**
  * Fetch 24h volume from mint/burn events
  */
 async function fetch24hVolume() {
-    try {
-        const { getPublicClient } = await import('./viemClient.js');
-        const { CONTRACTS } = await import('./config.js');
-        const { parseAbi } = await import('https://esm.sh/viem@2.7.0');
-        
-        const publicClient = getPublicClient();
-        const currentBlock = await publicClient.getBlockNumber();
-        // Use 10k blocks (~13.9 hours) to stay under RPC limits
-        const lookbackBlocks = 10000n;
-        const fromBlock = currentBlock - lookbackBlocks;
-        
-        const hubAbi = parseAbi([
-            'event MintInitiated(bytes32 indexed requestId, address indexed initiator, address indexed recipient, address lpVault, uint256 xmrAmount, uint256 wsxmrAmount, uint256 feeAmount, bytes32 claimCommitment, bytes32 userPublicKey, uint256 timeout)',
-            'event BurnRequested(bytes32 indexed requestId, address indexed user, address indexed lpVault, uint256 wsxmrAmount, uint256 xmrAmount, uint256 rewardCollateral, bytes32 claimCommitment)'
-        ]);
-        
-        const [mintEvents, burnEvents] = await Promise.all([
-            publicClient.getContractEvents({
-                address: CONTRACTS.hub,
-                abi: hubAbi,
-                eventName: 'MintInitiated',
-                fromBlock,
-                toBlock: 'latest'
-            }),
-            publicClient.getContractEvents({
-                address: CONTRACTS.hub,
-                abi: hubAbi,
-                eventName: 'BurnRequested',
-                fromBlock,
-                toBlock: 'latest'
-            })
-        ]);
-        
-        // Sum up wsXMR amounts from both mints and burns
+    const volumeElement = document.getElementById('volume-stat');
+    if (!volumeElement) return;
+
+    const { getPublicClient } = await import('./viemClient.js');
+    const { CONTRACTS } = await import('./config.js');
+    const { parseAbi } = await import('https://esm.sh/viem@2.7.0');
+
+    const publicClient = getPublicClient();
+    const currentBlock = await publicClient.getBlockNumber();
+
+    const hubAbi = parseAbi([
+        'event MintInitiated(bytes32 indexed requestId, address indexed initiator, address indexed recipient, address lpVault, uint256 xmrAmount, uint256 wsxmrAmount, uint256 feeAmount, bytes32 claimCommitment, bytes32 userPublicKey, uint256 timeout)',
+        'event BurnRequested(bytes32 indexed requestId, address indexed user, address indexed lpVault, uint256 wsxmrAmount, uint256 xmrAmount, uint256 rewardCollateral, bytes32 claimCommitment)'
+    ]);
+
+    function renderVolume(mintEvents, burnEvents, label) {
         let totalWsxmr = 0n;
-        for (const event of mintEvents) {
-            totalWsxmr += event.args.wsxmrAmount;
-        }
-        for (const event of burnEvents) {
-            totalWsxmr += event.args.wsxmrAmount;
-        }
-        
-        // Convert to float (8 decimals)
+        for (const e of mintEvents) totalWsxmr += e.args.wsxmrAmount;
+        for (const e of burnEvents) totalWsxmr += e.args.wsxmrAmount;
+
         const wsxmrVolume = Number(totalWsxmr) / 1e8;
-        
-        // Get XMR price
-        const xmrPrice = await fetchXmrPrice();
-        const volumeUsd = wsxmrVolume * (xmrPrice || 0);
-        
-        const volumeElement = document.getElementById('volume-stat');
-        if (volumeElement) {
-            if (volumeUsd >= 1000) {
-                volumeElement.textContent = `$${(volumeUsd / 1000).toFixed(1)}K`;
-            } else if (volumeUsd >= 1) {
-                volumeElement.textContent = `$${volumeUsd.toFixed(0)}`;
-            } else if (volumeUsd > 0) {
-                volumeElement.textContent = `$${volumeUsd.toFixed(2)}`;
-            } else {
-                volumeElement.textContent = '$0';
-            }
-        }
-        
-        console.log(`24h volume: ${wsxmrVolume.toFixed(2)} wsXMR ($${volumeUsd.toFixed(2)})`);
-    } catch (error) {
-        console.error('Could not fetch 24h volume:', error);
-        const volumeElement = document.getElementById('volume-stat');
-        if (volumeElement) {
+        const xmrPrice = priceCache.value || 0;
+        const volumeUsd = wsxmrVolume * xmrPrice;
+
+        if (volumeUsd >= 1000) {
+            volumeElement.textContent = `$${(volumeUsd / 1000).toFixed(1)}K`;
+        } else if (volumeUsd >= 1) {
+            volumeElement.textContent = `$${volumeUsd.toFixed(0)}`;
+        } else if (volumeUsd > 0) {
+            volumeElement.textContent = `$${volumeUsd.toFixed(2)}`;
+        } else {
             volumeElement.textContent = '$0';
         }
+
+        console.log(`[VOLUME] ${label} → ${wsxmrVolume.toFixed(2)} wsXMR ($${volumeUsd.toFixed(2)})`);
+    }
+
+    // 1) Try single large queries first
+    const singleRanges = [20000n, 10000n, 5000n, 2000n];
+    for (const range of singleRanges) {
+        try {
+            const fromBlock = currentBlock > range ? currentBlock - range : 0n;
+            const [mints, burns] = await Promise.all([
+                publicClient.getContractEvents({ address: CONTRACTS.hub, abi: hubAbi, eventName: 'MintInitiated', fromBlock, toBlock: 'latest' }),
+                publicClient.getContractEvents({ address: CONTRACTS.hub, abi: hubAbi, eventName: 'BurnRequested', fromBlock, toBlock: 'latest' })
+            ]);
+            renderVolume(mints, burns, `Single ${range} blocks`);
+            return;
+        } catch (err) {
+            console.warn(`[VOLUME] Single query ${range} blocks failed`, err.message || err);
+        }
+    }
+
+    // 2) Fallback: chunked scan for true 24h coverage.
+    //    Base ≈2s block time → 43200 blocks ≈24h. We scan in 1000-block chunks.
+    async function fetchChunked(totalBlocks, chunkSize) {
+        const startBlock = currentBlock > totalBlocks ? currentBlock - totalBlocks : 0n;
+        let mints = [], burns = [];
+        const chunks = [];
+        for (let from = startBlock; from < currentBlock; from += chunkSize) {
+            const to = from + chunkSize > currentBlock ? currentBlock : from + chunkSize;
+            chunks.push({ from, to });
+        }
+        // Batch chunks 5-at-a-time to avoid RPC rate limits
+        const batchSize = 5;
+        for (let i = 0; i < chunks.length; i += batchSize) {
+            const batch = chunks.slice(i, i + batchSize);
+            const results = await Promise.all(
+                batch.map(({ from, to }) =>
+                    Promise.all([
+                        publicClient.getContractEvents({ address: CONTRACTS.hub, abi: hubAbi, eventName: 'MintInitiated', fromBlock: from, toBlock: to }).catch(() => []),
+                        publicClient.getContractEvents({ address: CONTRACTS.hub, abi: hubAbi, eventName: 'BurnRequested', fromBlock: from, toBlock: to }).catch(() => [])
+                    ])
+                )
+            );
+            for (const [m, b] of results) {
+                mints = mints.concat(m);
+                burns = burns.concat(b);
+            }
+        }
+        return { mints, burns };
+    }
+
+    try {
+        console.log('[VOLUME] Falling back to chunked 43200-block scan (~24h on Base)');
+        const { mints, burns } = await fetchChunked(43200n, 1000n);
+        renderVolume(mints, burns, 'Chunked 43200 blocks');
+        return;
+    } catch (err) {
+        console.error('[VOLUME] Chunked 43200 failed', err);
+    }
+
+    // 3) Last resort: tiny chunked scan
+    try {
+        const { mints, burns } = await fetchChunked(5000n, 500n);
+        renderVolume(mints, burns, 'Chunked 5000 blocks');
+        return;
+    } catch (err) {
+        console.error('[VOLUME] All volume queries failed');
+        volumeElement.textContent = '—';
     }
 }
 
@@ -256,8 +352,9 @@ async function init() {
     // Check for active swap
     checkForActiveSwap();
     
-    // Fetch XMR price (cached, falls back to CoinCap if CoinGecko blocked)
+    // Fetch prices (cached, falls back to CoinCap if CoinGecko blocked)
     fetchXmrPrice();
+    fetchEthPrice();
     fetch24hVolume();
 
     // Load activity feed and protocol stats
@@ -280,9 +377,10 @@ async function init() {
         }
     }, 60000);
 
-    // Refresh XMR price every 5 minutes (CoinGecko free-tier friendly)
+    // Refresh prices every 5 minutes (CoinGecko free-tier friendly)
     setInterval(() => {
         fetchXmrPrice(true);
+        fetchEthPrice(true);
     }, 5 * 60 * 1000);
     
     // Listen for account/chain changes
@@ -1705,7 +1803,13 @@ async function loadVaults() {
             console.log('Oracle prices (fresh):', { xmrPrice, collPrice });
         } catch (e) {
             console.error('⚠️ ORACLE PRICES ARE STALE! Click "Update Prices" button to refresh.');
-            console.warn('Using hardcoded fallback prices - capacity will be INCORRECT:', e.message);
+            console.warn('Using fallback prices - capacity will be INCORRECT:', e.message);
+            // Fallback to CoinGecko/CoinCap for ETH price
+            const fetchedEthPrice = await fetchEthPrice();
+            if (fetchedEthPrice) {
+                collPrice = fetchedEthPrice;
+                console.log('[PRICE] Using fetched ETH price for TVL/capacity:', collPrice);
+            }
         }
 
         // Get collateral token contract for convertToAssets

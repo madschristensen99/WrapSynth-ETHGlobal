@@ -260,15 +260,59 @@ export class CoLPFlow {
      * @notice Query user's active Co-LP positions from chain events
      * @returns {Promise<Array<{tokenId: string, vault: string, wsxmrAmount: string, rangeBps: number}>>}
      */
+    async _getChunkedEvents(publicClient, address, abi, eventName, args, fromBlock, toBlock, chunkSize = 2000n) {
+        const allEvents = [];
+        const logPrefix = `[CoLPChunkedEvents ${eventName}]`;
+        for (let start = fromBlock; start <= toBlock; start += chunkSize) {
+            const end = start + chunkSize - 1n > toBlock ? toBlock : start + chunkSize - 1n;
+            try {
+                const chunk = await publicClient.getContractEvents({
+                    address,
+                    abi,
+                    eventName,
+                    args,
+                    fromBlock: start,
+                    toBlock: end
+                });
+                allEvents.push(...chunk);
+            } catch (err) {
+                console.warn(`${logPrefix} chunk ${start}-${end} failed with ${chunkSize} blocks:`, err.message || err);
+                // Retry with smaller 500-block chunks
+                if (chunkSize > 500n) {
+                    console.log(`${logPrefix} retrying ${start}-${end} with 500-block chunks...`);
+                    try {
+                        const retryEvents = await this._getChunkedEvents(publicClient, address, abi, eventName, args, start, end, 500n);
+                        allEvents.push(...retryEvents);
+                    } catch (retryErr) {
+                        console.warn(`${logPrefix} retry ${start}-${end} also failed:`, retryErr.message || retryErr);
+                    }
+                } else {
+                    // Already at smallest chunk; skip this range
+                    console.warn(`${logPrefix} skipping block range ${start}-${end}`);
+                }
+            }
+        }
+        console.log(`${logPrefix} total events collected:`, allEvents.length);
+        return allEvents;
+    }
+
     async getUserActivePositions() {
         if (!this.userAddress) return [];
+        console.log('[CoLP] getUserActivePositions v2 — using chunked event scan (2000-block chunks with 500-block fallback)');
 
         const publicClient = getPublicClient();
-        const currentBlock = await publicClient.getBlockNumber();
-        // Scan last ~2.75 days max (48,000 blocks) to stay within RPC provider limits
+        let currentBlock;
+        try {
+            currentBlock = await publicClient.getBlockNumber();
+        } catch (err) {
+            console.error('[CoLP] getBlockNumber failed:', err.message || err);
+            throw new Error(`Cannot get current block: ${err.message}`);
+        }
+
+        // Scan last ~2.75 days max (48,000 blocks)
         const MAX_SCAN_BLOCKS = 48000n;
         const fromBlock = currentBlock > MAX_SCAN_BLOCKS ? currentBlock - MAX_SCAN_BLOCKS : 0n;
-        const safeFromBlock = fromBlock;
+        console.log(`[CoLP] scanning blocks ${fromBlock} to ${currentBlock} for user ${this.userAddress}`);
 
         const hubAbi = parseAbi([
             'event CoLPDeployed(address indexed vault, address indexed user, uint256 indexed tokenId, uint256 sDAIShares, uint256 wsxmrAmount, uint16 rangeBps)',
@@ -276,36 +320,24 @@ export class CoLPFlow {
             'event CoLPRebalanced(uint256 indexed oldTokenId, uint256 indexed newTokenId, address indexed vault, address user, address caller, uint16 newRangeBps)'
         ]);
 
-        // Query CoLPDeployed events for this user
-        const deployedEvents = await publicClient.getContractEvents({
-            address: CONTRACTS.hub,
-            abi: hubAbi,
-            eventName: 'CoLPDeployed',
-            args: { user: this.userAddress },
-            fromBlock: safeFromBlock,
-            toBlock: 'latest'
-        });
+        // Query events in small chunks to avoid RPC block-range limits
+        const chunkSize = 2000n;
+        const deployedEvents = await this._getChunkedEvents(
+            publicClient, CONTRACTS.hub, hubAbi, 'CoLPDeployed',
+            { user: this.userAddress }, fromBlock, currentBlock, chunkSize
+        );
 
-        // Query CoLPUnwound events for this user
-        const unwoundEvents = await publicClient.getContractEvents({
-            address: CONTRACTS.hub,
-            abi: hubAbi,
-            eventName: 'CoLPUnwound',
-            args: { user: this.userAddress },
-            fromBlock: safeFromBlock,
-            toBlock: 'latest'
-        });
+        const unwoundEvents = await this._getChunkedEvents(
+            publicClient, CONTRACTS.hub, hubAbi, 'CoLPUnwound',
+            { user: this.userAddress }, fromBlock, currentBlock, chunkSize
+        );
 
         // Track rebalanced tokenIds: oldTokenId -> newTokenId
         const rebalanceMap = new Map(); // oldTokenId -> newTokenId
-        const rebalanceEvents = await publicClient.getContractEvents({
-            address: CONTRACTS.hub,
-            abi: hubAbi,
-            eventName: 'CoLPRebalanced',
-            args: { user: this.userAddress },
-            fromBlock: safeFromBlock,
-            toBlock: 'latest'
-        });
+        const rebalanceEvents = await this._getChunkedEvents(
+            publicClient, CONTRACTS.hub, hubAbi, 'CoLPRebalanced',
+            { user: this.userAddress }, fromBlock, currentBlock, chunkSize
+        );
         for (const ev of rebalanceEvents) {
             rebalanceMap.set(ev.args.oldTokenId.toString(), ev.args.newTokenId.toString());
         }

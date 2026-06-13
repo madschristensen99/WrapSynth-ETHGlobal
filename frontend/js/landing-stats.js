@@ -11,7 +11,7 @@ const RPC_URLS = [
 ];
 
 const CONFIG = {
-    HUB_ADDRESS: D.contracts?.wsXmrHub || '0x65d3b7ff17dfa21fd6bb1553d51336b66548a1c3',
+    HUB_ADDRESS: D.contracts?.wsXmrHub || '0x0454983E17b803a2C6ff0d98d5D58676525F4A92',
     WSXMR_ADDRESS: D.contracts?.wsXMR || '0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b'
 };
 
