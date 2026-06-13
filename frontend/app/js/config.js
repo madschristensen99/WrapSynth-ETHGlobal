@@ -8,29 +8,14 @@ const DP = D.pool || {};
 const DLC = D.lpConfig || {};
 
 export const NETWORKS = {
-    gnosis: {
-        id: D.chainId || 100,
-        name: 'Gnosis Chain',
-        rpcUrls: [
-            'https://rpc.ankr.com/gnosis',
-            'https://gnosis.api.onfinality.io/public',
-            'https://rpc.gnosis.gateway.fm'
-        ],
-        blockExplorer: D.explorer || 'https://gnosisscan.io',
-        nativeCurrency: {
-            name: 'xDAI',
-            symbol: 'xDAI',
-            decimals: 18
-        }
-    },
     baseSepolia: {
-        id: 84532,
-        name: 'Base Sepolia',
+        id: D.chainId || 84532,
+        name: D.network || 'Base Sepolia',
         rpcUrls: [
-            'https://sepolia.base.org',
+            D.rpcUrl || 'https://sepolia.base.org',
             'https://base-sepolia-rpc.publicnode.com'
         ],
-        blockExplorer: 'https://sepolia.basescan.org',
+        blockExplorer: D.explorer || 'https://sepolia.basescan.org',
         nativeCurrency: {
             name: 'Ether',
             symbol: 'ETH',
@@ -45,20 +30,20 @@ export const NETWORKS = {
 export const ORACLE_CONFIG = {
     reportProxyUrl: (typeof window !== 'undefined' && window.REPORT_PROXY_URL) || 'http://localhost:3002',
     xmrFeedId: '0x0003c70558bd921b1559d37b8e347797f121d1240e7386e68b2bee9b731b0833', // XMR/USD-RefPrice-testnet-production
-    daiFeedId: '0x0003649272a19e143a7f4c2d98905b413e98dce81fb09287dcf4c513cba5cc72', // DAI/USD-RefPrice-DSSepolia-Premium-GlobalTestnet-003
+    ethFeedId: '0x000359843a543ee2fe414dc14c7e7920ef10f4372990b79d6361cdc0dd1ba782', // ETH/USD-RefPrice-testnet-production
     verifierProxy: '0x8Ac491b7c118a0cdcF048e0f707247fD8C9575f9',
     linkToken: '0xE4aB69C077896252FAFBD49EFD26B5D171A32410'
 };
 
 // Contract addresses - source of truth: ../../deployment.json
 export const CONTRACTS = {
-    hub: DC.wsXmrHub || '0x1fb8E7593B01bCdAE13e5b63e529f0e30a3ebD50',
-    wsxmrToken: DC.wsXMR || '0x30Aeb2A142744430fFD7D698D5C7C41769CE1279',
-    liquidityRouter: DC.liquidityRouter || '0x6893f38e1DeEdCa95ce8995B01550921cEe353a1',
-    sDAI: DE.sDAI || '0xaf204776c7245bF4147c2612BF6e5972Ee483701',
-    uniswapV3Pool: DP.uniswapV3Pool || '0x3b3f640b137ed13c79d2d51c54329816a6fbd85d',
+    hub: DC.wsXmrHub || '0x65d3b7ff17dfa21fd6bb1553d51336b66548a1c3',
+    wsxmrToken: DC.wsXMR || '0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b',
+    liquidityRouter: DC.liquidityRouter || '0x0F9172c037eC5dFFa940aFa357Ee0A52B5a08d71',
+    sDAI: DE.sDAI || '0x57cA07e0443c7Dc720CAd8AF63D8a6bBeDabD202',
+    uniswapV3Pool: DP.uniswapV3Pool || '0x79cF96e0FA6aBE3cF02994B35c68A69359857Ae9',
     // Default LP vault to use for mints (the active LP running the LP node)
-    defaultLpVault: DLC.defaultLpVault || '0x492c0b9F298cC49FE2644a2EBc6eA8dF848c72FB'
+    defaultLpVault: DLC.defaultLpVault || null
 };
 
 // LP Server Configuration
@@ -80,7 +65,7 @@ export const LP_SERVER_CONFIG = {
 export const DECIMALS = {
     wsXMR: 8,      // EVM wsXMR token decimals
     XMR: 12,       // Monero atomic units decimals
-    ETH: 18,       // ETH/xDAI decimals
+    ETH: 18,       // ETH decimals
     USD: 18        // Pyth price decimals
 };
 
@@ -317,7 +302,7 @@ export const ABIS = {
         'error PoolNotInitialized()',
         'error PoolAlreadyInitialized()',
 
-        // Oracle (ChainlinkDataStreamsOracleFacet — bytes[] = [XMR fullReport, DAI fullReport])
+        // Oracle (ChainlinkDataStreamsOracleFacet — bytes[] = [XMR fullReport, ETH fullReport])
         'function updateOraclePrices(bytes[] calldata) external payable',
         'function getXmrPrice() external view returns (uint256)',
         'function getCollateralPrice() external view returns (uint256)',

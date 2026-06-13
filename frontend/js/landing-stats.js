@@ -1,18 +1,18 @@
-// Landing Page Live Stats - Fetch from Gnosis Mainnet
+// Landing Page Live Stats - Fetch from Base Sepolia
 // Contract addresses are loaded from the canonical deployment.json (window.DEPLOYMENT).
 import { createPublicClient, http, fallback, formatUnits, parseAbi } from 'https://esm.sh/viem@2.7.0';
-import { gnosis } from 'https://esm.sh/viem@2.7.0/chains';
+import { baseSepolia } from 'https://esm.sh/viem@2.7.0/chains';
 
 const D = window.DEPLOYMENT || {};
 const RPC_URLS = [
-    'https://rpc.ankr.com/gnosis',
-    'https://gnosis.api.onfinality.io/public',
-    D.rpcUrl || 'https://rpc.gnosis.gateway.fm'
+    'https://sepolia.base.org',
+    'https://base-sepolia-rpc.publicnode.com',
+    D.rpcUrl || 'https://sepolia.base.org'
 ];
 
 const CONFIG = {
-    HUB_ADDRESS: D.contracts?.wsXmrHub || '0x1fb8E7593B01bCdAE13e5b63e529f0e30a3ebD50',
-    WSXMR_ADDRESS: D.contracts?.wsXMR || '0x30Aeb2A142744430fFD7D698D5C7C41769CE1279'
+    HUB_ADDRESS: D.contracts?.wsXmrHub || '0x65d3b7ff17dfa21fd6bb1553d51336b66548a1c3',
+    WSXMR_ADDRESS: D.contracts?.wsXMR || '0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b'
 };
 
 const HUB_ABI = parseAbi([
@@ -64,7 +64,7 @@ const WSXMR_ABI = parseAbi([
 ]);
 
 const publicClient = createPublicClient({
-    chain: gnosis,
+    chain: baseSepolia,
     transport: fallback(RPC_URLS.map(url => http(url)), { rank: false })
 });
 
@@ -152,7 +152,7 @@ async function updateLandingStats() {
         const collateralInEth = parseFloat(formatUnits(totalCollateral, 18));
         const debtInWsxmr = parseFloat(formatUnits(totalDebt, 8));
         
-        // Fetch collateral price (sDAI ≈ $1)
+        // Fetch collateral price (ETH)
         let collateralPrice = 1.0;
         try {
             const collateralPriceWei = await publicClient.readContract({

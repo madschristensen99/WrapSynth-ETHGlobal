@@ -60,9 +60,9 @@ import { getCoLPFlow } from './coLPFlow.js';
 import { getDashboard } from './dashboard.js';
 import { hasActiveSwap, loadActiveSwap, loadActiveSwaps, saveActiveSwap, addOrUpdateActiveSwap, removeActiveSwap, clearActiveSwap, setSwapsArray, getActiveSwapByRequestId, saveToHistory } from './storage.js';
 import { CONTRACTS, SWAP_CONFIG } from './config.js';
-import { displaySwapHistory } from './swapHistory.js';
-import { loadRecentActivity, startActivityFeedWatcher } from './activityFeed.js';
-import { updateProtocolStats } from './protocolStats.js';
+import { displaySwapHistory } from './swapHistory.js?v=3';
+import { loadRecentActivity, startActivityFeedWatcher } from './activityFeed.js?v=3';
+import { updateProtocolStats } from './protocolStats.js?v=3';
 
 // Global state
 let currentMintFlow = null;
@@ -1676,44 +1676,44 @@ async function handleResolveSwap(swap) {
  */
 async function loadVaults() {
     try {
-        // Hardcoded list of known LP vaults
-        // In production, this would query events or use a registry
-        const knownVaults = [
-            '0x492c0b9F298cC49FE2644a2EBc6eA8dF848c72FB', // Your LP vault
-        ];
+        // Discover vaults dynamically via Diamond vault registry
+        const knownVaults = [];
+        try {
+            const vaultCount = await readHub('getVaultCount');
+            for (let i = 0n; i < vaultCount; i++) {
+                try {
+                    const addr = await readHub('getVaultAtIndex', [i]);
+                    if (addr) knownVaults.push(addr);
+                } catch (e) { break; }
+            }
+        } catch (e) {
+            console.warn('[loadVaults] Could not fetch vault list:', e.message);
+        }
         
         const activeVaults = [];
         let totalCollateralWei = 0n;
 
-        // Fetch oracle prices and globalDebtIndex for capacity calculation
+        // Fetch oracle prices for capacity calculation
         let xmrPrice = 150;   // fallback USD per XMR
-        let collPrice = 1.0;  // fallback USD per sDAI
-        let globalDebtIndex = 1e18; // fallback (no scaling)
+        let collPrice = 2500;  // fallback USD per ETH
         try {
             // Try to get fresh prices first
             const xmrPriceWei = await readHub('getXmrPrice');
             const collPriceWei = await readHub('getCollateralPrice');
-            globalDebtIndex = await readHub('globalDebtIndex');
             xmrPrice = Number(xmrPriceWei) / 1e18;
             collPrice = Number(collPriceWei) / 1e18;
-            console.log('Oracle prices (fresh):', { xmrPrice, collPrice, globalDebtIndex: globalDebtIndex.toString() });
+            console.log('Oracle prices (fresh):', { xmrPrice, collPrice });
         } catch (e) {
             console.error('⚠️ ORACLE PRICES ARE STALE! Click "Update Prices" button to refresh.');
             console.warn('Using hardcoded fallback prices - capacity will be INCORRECT:', e.message);
-            // Still fetch globalDebtIndex even if prices are stale
-            try {
-                globalDebtIndex = await readHub('globalDebtIndex');
-            } catch (e2) {
-                console.warn('Could not fetch globalDebtIndex:', e2.message);
-            }
         }
 
-        // Get sDAI contract for convertToAssets
+        // Get collateral token contract for convertToAssets
         const { getPublicClient } = await import('./viemClient.js');
         const { parseAbi } = await import('https://esm.sh/viem@2.7.0');
         const publicClient = getPublicClient();
-        const sDAIAbi = parseAbi(['function convertToAssets(uint256 shares) view returns (uint256)']);
-        const sDAIAddress = CONTRACTS.sDAI;
+        const collateralAbi = parseAbi(['function convertToAssets(uint256 shares) view returns (uint256)']);
+        const collateralAddress = CONTRACTS.sDAI;
 
         for (const vaultAddress of knownVaults) {
             try {
@@ -1728,28 +1728,27 @@ async function loadVaults() {
                 const hasCollateral = vaultData && vaultData.collateralShares && BigInt(vaultData.collateralShares.toString()) > 0n;
 
                 if (hasCollateral || vaultData.active) {
-                    // Convert sDAI shares to underlying DAI assets (like the contract does)
+                    // Convert collateral shares to underlying assets (like the contract does)
                     const collShares = BigInt(vaultData.collateralShares.toString());
                     const lockedShares = BigInt(vaultData.lockedCollateral.toString());
                     const availableShares = collShares > lockedShares ? collShares - lockedShares : 0n;
                     
-                    let collAmountDAI = Number(availableShares) / 1e18; // fallback: assume 1:1
+                    let collAmountETH = Number(availableShares) / 1e18; // fallback: assume 1:1
                     try {
                         const assetsWei = await publicClient.readContract({
-                            address: sDAIAddress,
-                            abi: sDAIAbi,
+                            address: collateralAddress,
+                            abi: collateralAbi,
                             functionName: 'convertToAssets',
                             args: [availableShares]
                         });
-                        collAmountDAI = Number(assetsWei) / 1e18;
+                        collAmountETH = Number(assetsWei) / 1e18;
                     } catch (e) {
                         console.warn('convertToAssets failed, using shares as fallback:', e.message);
                     }
 
-                    // Denormalize debt using globalDebtIndex (actualDebt = normalizedDebt * index / 1e18)
+                    // Use normalizedDebt directly (globalDebtIndex is not exposed on Diamond)
                     const normalizedDebt = BigInt(vaultData.normalizedDebt.toString());
-                    const actualDebt = (normalizedDebt * BigInt(globalDebtIndex.toString())) / BigInt(1e18);
-                    const debtAmount = Number(actualDebt) / 1e8; // wsXMR has 8 decimals
+                    const debtAmount = Number(normalizedDebt) / 1e8; // wsXMR has 8 decimals
                     const pendingDebtAmount = Number(vaultData.pendingDebt) / 1e8;
                     const totalDebt = debtAmount + pendingDebtAmount;
                     const debtValueUsd = debtAmount * xmrPrice;
@@ -1760,24 +1759,23 @@ async function loadVaults() {
                     const pendingCollateral = collPrice > 0 ? pendingDebtValueUsd / collPrice : 0;
                     // Buffer = extra 50% collateral required to maintain 150% ratio (on total debt)
                     const bufferCollateral = (usedCollateral + pendingCollateral) * 0.5;
-                    const freeCollateral = Math.max(0, collAmountDAI - usedCollateral - pendingCollateral - bufferCollateral);
+                    const freeCollateral = Math.max(0, collAmountETH - usedCollateral - pendingCollateral - bufferCollateral);
                     
                     console.log('💰 CAPACITY BREAKDOWN:', {
-                        collAmountDAI,
+                        collAmountETH,
                         usedCollateral,
                         pendingCollateral,
                         bufferCollateral,
                         freeCollateral,
-                        calculation: `${collAmountDAI.toFixed(4)} - ${usedCollateral.toFixed(4)} - ${pendingCollateral.toFixed(4)} - ${bufferCollateral.toFixed(4)} = ${freeCollateral.toFixed(4)}`
+                        calculation: `${collAmountETH.toFixed(4)} - ${usedCollateral.toFixed(4)} - ${pendingCollateral.toFixed(4)} - ${bufferCollateral.toFixed(4)} = ${freeCollateral.toFixed(4)}`
                     });
 
                     console.log('Vault capacity:', {
                         collShares: collShares.toString(),
                         lockedShares: lockedShares.toString(),
                         availableShares: availableShares.toString(),
-                        collAmountDAI,
+                        collAmountETH,
                         normalizedDebt: normalizedDebt.toString(),
-                        actualDebt: actualDebt.toString(),
                         debtAmount,
                         pendingDebtAmount,
                         totalDebt,
@@ -1797,7 +1795,7 @@ async function loadVaults() {
                     // Enforce maxMintBps cap if configured (mirrors MintFacet check)
                     const maxMintBps = Number(vaultData.maxMintBps);
                     if (maxMintBps > 0) {
-                        const collateralValueUsd = collAmountDAI * collPrice;
+                        const collateralValueUsd = collAmountETH * collPrice;
                         const maxTotalDebtCapacity = (collateralValueUsd * 100) / 150;
                         const maxMintAllowedUsd = (maxTotalDebtCapacity * maxMintBps) / 10000;
                         const maxMintBpsCapacity = maxMintAllowedUsd / xmrPrice;
@@ -1835,13 +1833,22 @@ async function loadVaults() {
             vaultsStatEl.textContent = activeVaults.length.toString();
         }
         
-        // Update TVL (convert sDAI shares to approximate USD value)
-        // sDAI is roughly 1:1 with DAI, so we can approximate
+        // Update TVL — include both vault collateral shares AND hub ETH balance
+        // (On Base Sepolia collateral is native ETH, so hub balance is the true TVL)
         const tvlStatEl = document.getElementById('tvl-stat');
-        if (tvlStatEl && totalCollateralWei > 0n) {
-            const collateralInDai = Number(totalCollateralWei) / 1e18;
-            // Assuming DAI ≈ $1
-            const tvlUsd = collateralInDai;
+        let tvlWei = totalCollateralWei;
+        try {
+            const hubBalance = await publicClient.getBalance({ address: CONTRACTS.hub });
+            if (hubBalance > 0n) {
+                tvlWei = hubBalance;
+                console.log('Hub ETH balance (used for TVL):', Number(hubBalance) / 1e18, 'ETH');
+            }
+        } catch (e) {
+            console.warn('Could not fetch hub balance:', e.message);
+        }
+        if (tvlStatEl && tvlWei > 0n) {
+            const collateralInEth = Number(tvlWei) / 1e18;
+            const tvlUsd = collateralInEth * collPrice;
             if (tvlUsd >= 1000) {
                 tvlStatEl.textContent = `$${(tvlUsd / 1000).toFixed(1)}K`;
             } else {
@@ -1852,11 +1859,7 @@ async function loadVaults() {
         }
         
         if (activeVaults.length === 0) {
-            // Fallback to showing the known vault even if query failed
-            activeVaults.push({
-                address: '0x492c0b9F298cC49FE2644a2EBc6eA8dF848c72FB',
-                name: 'LP Vault 0x492c...72FB'
-            });
+            console.log('[loadVaults] No active vaults found on-chain');
         }
         
         cachedVaults = activeVaults;

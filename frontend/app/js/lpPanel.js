@@ -47,8 +47,8 @@ export class LPPanel {
         return receipt;
     }
 
-    async depositCollateral(amountXDAI) {
-        const amount = parseUnits(amountXDAI.toString(), DECIMALS.ETH);
+    async depositCollateral(amountETH) {
+        const amount = parseUnits(amountETH.toString(), DECIMALS.ETH);
         const receipt = await writeHub('depositCollateral', [amount]);
         console.log('Collateral deposited:', receipt.transactionHash);
         
@@ -88,8 +88,8 @@ export class LPPanel {
         return receipt;
     }
 
-    async setGriefingDeposit(depositXDAI) {
-        const deposit = parseUnits(depositXDAI.toString(), DECIMALS.ETH);
+    async setGriefingDeposit(depositETH) {
+        const deposit = parseUnits(depositETH.toString(), DECIMALS.ETH);
         const receipt = await writeHub('setMintGriefingDeposit', [deposit]);
         console.log('Griefing deposit updated:', receipt.transactionHash);
         

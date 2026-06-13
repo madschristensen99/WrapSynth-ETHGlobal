@@ -6,7 +6,7 @@
 //   1. Fetch signed `fullReport` blobs from the report-proxy server
 //      (frontend/report-proxy/) — the API secret never reaches the browser.
 //   2. ABI-encode `updateOraclePrices(bytes[])` with the two report blobs
-//      (XMR/USD, DAI/USD) inside the args array.
+//      (XMR/USD, ETH/USD) inside the args array.
 //   3. Send the transaction; the hub delegatecalls
 //      ChainlinkDataStreamsOracleFacet, which verifies each report via the
 //      on-chain VerifierProxy and stores the resulting prices.
@@ -24,7 +24,7 @@ export async function updateOraclePrices() {
     const account = getUserAddress();
 
     const proxyUrl = ORACLE_CONFIG.reportProxyUrl;
-    const feedIDs = [ORACLE_CONFIG.xmrFeedId, ORACLE_CONFIG.daiFeedId].join(',');
+    const feedIDs = [ORACLE_CONFIG.xmrFeedId, ORACLE_CONFIG.ethFeedId].join(',');
 
     console.log(`Fetching reports from ${proxyUrl}...`);
     const res = await fetch(`${proxyUrl}/reports?feedIDs=${feedIDs}`);
@@ -37,10 +37,10 @@ export async function updateOraclePrices() {
         throw new Error(`Expected 2 reports, got ${reports?.length ?? 'none'}`);
     }
 
-    // Preserve the [XMR, DAI] order the facet expects
+    // Preserve the [XMR, ETH] order the facet expects
     const sorted = [
         reports.find((r) => r.feedID.toLowerCase() === ORACLE_CONFIG.xmrFeedId.toLowerCase()),
-        reports.find((r) => r.feedID.toLowerCase() === ORACLE_CONFIG.daiFeedId.toLowerCase()),
+        reports.find((r) => r.feedID.toLowerCase() === ORACLE_CONFIG.ethFeedId.toLowerCase()),
     ];
     if (!sorted[0] || !sorted[1]) throw new Error('Report proxy returned wrong feed IDs');
     const updateData = sorted.map((r) =>

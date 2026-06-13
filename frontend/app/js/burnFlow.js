@@ -187,7 +187,7 @@ export class BurnFlow {
         // First, check if HashProposed event was already emitted in the past
         const { getPastEvents, getBlockNumber } = await import('./viemClient.js');
         const currentBlock = await getBlockNumber();
-        const fromBlock = currentBlock - 1000n; // Check last ~1000 blocks (about 1.5 hours on Gnosis)
+        const fromBlock = currentBlock - 1000n; // Check last ~1000 blocks (about 3.3 hours on Base Sepolia)
         
         console.log(`Checking for past HashProposed events from block ${fromBlock} to ${currentBlock}...`);
         const pastEvents = await getPastEvents(

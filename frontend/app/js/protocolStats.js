@@ -23,7 +23,7 @@ const MINT_INITIATED_EVENT = {
     type: 'event'
 };
 
-const DEPLOYMENT_BLOCK = 46580000n; // Approximate deployment block on Gnosis
+const DEPLOYMENT_BLOCK = 0n; // Base Sepolia deployment block
 const MAX_BLOCK_RANGE = 10000n; // Conservative limit to avoid RPC errors
 
 export async function updateProtocolStats() {
@@ -87,8 +87,8 @@ async function fetchVaultAggregates() {
     }
 
     // Fetch oracle prices
-    let xmrPrice = 150;
-    let collateralPrice = 1.0;
+    let xmrPrice = 150;      // fallback USD per XMR
+    let collateralPrice = 2500;  // fallback USD per ETH
     try {
         const xmrPriceWei = await readHub('getXmrPrice');
         const collPriceWei = await readHub('getCollateralPrice');

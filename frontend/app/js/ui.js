@@ -470,8 +470,8 @@ export function populateVaults(vaults) {
                 <div class="vault-item">
                     <div class="vault-header">
                         <strong>LP Vault ${shortAddr}</strong>
-                        <span class="vault-collateral">${collateralAmount} sDAI</span>
-                        <a href="https://gnosisscan.io/address/${v.address}" target="_blank" rel="noopener" class="vault-scan-inline" title="View on GnosisScan">${getIconSVG('externalLink')}</a>
+                        <span class="vault-collateral">${collateralAmount} ETH</span>
+                        <a href="https://sepolia.basescan.org/address/${v.address}" target="_blank" rel="noopener" class="vault-scan-inline" title="View on Basescan">${getIconSVG('externalLink')}</a>
                     </div>
                     ${v.collateral ? `<div class="vault-chart-row">
                         ${pieSvg}
@@ -480,28 +480,28 @@ export function populateVaults(vaults) {
                                 <span class="legend-dot used-dot"></span>
                                 <div class="legend-text">
                                     <span class="legend-label">Backing debt:</span>
-                                    <span class="legend-value">${usedAmount} sDAI</span>
+                                    <span class="legend-value">${usedAmount} ETH</span>
                                 </div>
                             </div>
                             ${pendingRaw > 0 ? `<div class="legend-row">
                                 <span class="legend-dot pending-dot"></span>
                                 <div class="legend-text">
                                     <span class="legend-label">Pending debt:</span>
-                                    <span class="legend-value">${pendingAmount} sDAI</span>
+                                    <span class="legend-value">${pendingAmount} ETH</span>
                                 </div>
                             </div>` : ''}
                             <div class="legend-row">
                                 <span class="legend-dot buffer-dot"></span>
                                 <div class="legend-text">
                                     <span class="legend-label">Safety buffer:</span>
-                                    <span class="legend-value">${bufferAmount} sDAI</span>
+                                    <span class="legend-value">${bufferAmount} ETH</span>
                                 </div>
                             </div>
                             <div class="legend-row">
                                 <span class="legend-dot free-dot"></span>
                                 <div class="legend-text">
                                     <span class="legend-label">Free capacity:</span>
-                                    <span class="legend-value">${freeAmount} sDAI</span>
+                                    <span class="legend-value">${freeAmount} ETH</span>
                                 </div>
                             </div>
                         </div>
@@ -522,11 +522,11 @@ export function showVaultInfo(vaultData, isMint = true) {
     
     const html = `
         <p><strong>Total XMR Locked:</strong> ${formatBalance(vaultData.totalXmrLocked, DECIMALS.wsXMR)} XMR</p>
-        <p><strong>Collateral:</strong> ${formatBalance(vaultData.totalCollateral, DECIMALS.ETH)} ${vaultData.collateralToken === '0x0000000000000000000000000000000000000000' ? 'xDAI' : 'Token'}</p>
+        <p><strong>Collateral:</strong> ${formatBalance(vaultData.totalCollateral, DECIMALS.ETH)} ${vaultData.collateralToken === '0x0000000000000000000000000000000000000000' ? 'ETH' : 'Token'}</p>
         <p><strong>Collateralization:</strong> ${vaultData.collateralizationRatio / 100}%</p>
-        <p><strong>Griefing Deposit:</strong> ${formatBalance(vaultData.mintGriefingDeposit, DECIMALS.ETH)} xDAI</p>
+        <p><strong>Griefing Deposit:</strong> ${formatBalance(vaultData.mintGriefingDeposit, DECIMALS.ETH)} ETH</p>
         <p><strong>Status:</strong> ${vaultData.isActive ? '✅ Active' : '❌ Inactive'}</p>
-        <p class="vault-info-link"><a href="https://gnosisscan.io/address/${vaultData.lpVault || ''}" target="_blank" rel="noopener">${getIconSVG('externalLink')}<span>View on GnosisScan</span></a></p>
+        <p class="vault-info-link"><a href="https://sepolia.basescan.org/address/${vaultData.lpVault || ''}" target="_blank" rel="noopener">${getIconSVG('externalLink')}<span>View on Basescan</span></a></p>
     `;
     
     infoElement.innerHTML = html;

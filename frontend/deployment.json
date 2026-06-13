@@ -7,23 +7,23 @@
   "wsUrl": null,
   "explorer": "https://sepolia.basescan.org",
   "contracts": {
-    "wsXMR": "0x81aab8b92b38d0ab60b99b4af12edaee92b9c0c4",
+    "wsXMR": "0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b",
     "wsXmrHub": "0x0454983e17b803a2c6ff0d98d5d58676525f4a92",
-    "liquidityRouter": "0x95adc386c3625a539785ef4b3c949f7c1497d268",
+    "liquidityRouter": "0x0F9172c037eC5dFFa940aFa357Ee0A52B5a08d71",
     "swapHelper": null,
     "facets": {
-      "ChainlinkDataStreamsOracleFacet": "0x6689612924f0d88219e1b63255956eb866d6992a",
-      "VaultFacet": "0xd66a00d99ff0f4d27277f106ceee4d94972c17c8",
-      "MintFacet": "0xcd14533cd779f274aa318de62f86f4bc32443cf2",
-      "BurnFacet": "0xa71909c305ff7250b7043fee16347edf053e451e",
-      "LiquidationFacet": "0x6820a01fb2ff6bec7d44672938ba84e90631f5c7",
-      "YieldFacet": "0x6d74451311e153cbe393c056e0acb6bd6769ae72"
+      "ChainlinkDataStreamsOracleFacet": "0xe38af534e73995a0bfac54e40ed82bc2ffddd22d",
+      "VaultFacet": "0xeb2435f32deda1da7cbbcd95fc3c230b0b9fcd92",
+      "MintFacet": "0x09109e9f0c9b2affbdef61a541b6a5e3f70069a9",
+      "BurnFacet": "0xc957665b81b16934bf2df813c714fabf8a5878ae",
+      "LiquidationFacet": "0x42d2cc6db9b495d85922e95d90815f2244567c56",
+      "YieldFacet": "0x2ed9cc036bba0d976847367a378e6d8e0d3ca19a"
     }
   },
   "externalContracts": {
-    "sDAI": "0xd25f4095f623916074255FE4294f6b8B4DEf5f24",
-    "wxDAI": "0x4200000000000000000000000000000000000006",
-    "chainlinkVerifierProxy": "0x2ff561f946D3862B463dd38A8b53CfD881a9e294",
+    "sDAI": "0x57cA07e0443c7Dc720CAd8AF63D8a6bBeDabD202",
+    "wxDAI": "0x7450C945A87F24DE0219D27f5d9A6EdeF6008CB3",
+    "chainlinkVerifierProxy": "0x8Ac491b7c118a0cdcF048e0f707247fD8C9575f9",
     "linkToken": "0xE4aB69C077896252FAFBD49EFD26B5D171A32410",
     "Ed25519Helper": "0x8D7DD0A1FD26A2602837B028afB7A1f1b21DA9E7"
   },
@@ -35,7 +35,7 @@
     "dataEngineUrl": "https://api.testnet-dataengine.chain.link"
   },
   "pool": {
-    "uniswapV3Pool": "0x639664438B2BDD0cBf29397dE8E14803029700C7",
+    "uniswapV3Pool": "0x79cF96e0FA6aBE3cF02994B35c68A69359857Ae9",
     "feeTier": 3000
   },
   "lpConfig": {

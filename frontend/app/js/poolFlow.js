@@ -26,8 +26,8 @@ export class PoolFlow {
         return true;
     }
 
-    async allocateLiquidity(sDAIAmount) {
-        const amount = parseUnits(sDAIAmount.toString(), DECIMALS.ETH);
+    async allocateLiquidity(ethAmount) {
+        const amount = parseUnits(ethAmount.toString(), DECIMALS.ETH);
         
         const client = getWalletClient();
         const publicClient = getPublicClient();
@@ -70,8 +70,8 @@ export class PoolFlow {
         return receipt;
     }
 
-    async createPosition(lpAddress, sDAIAmount, wsxmrAmount, deadline) {
-        const sDAI = parseUnits(sDAIAmount.toString(), DECIMALS.ETH);
+    async createPosition(lpAddress, ethAmount, wsxmrAmount, deadline) {
+        const eth = parseUnits(ethAmount.toString(), DECIMALS.ETH);
         const wsxmr = parseUnits(wsxmrAmount.toString(), DECIMALS.wsXMR);
         
         const client = getWalletClient();
@@ -81,7 +81,7 @@ export class PoolFlow {
             address: CONTRACTS.liquidityRouter,
             abi: parseAbi(ABIS.liquidityRouter),
             functionName: 'createPosition',
-            args: [lpAddress, this.userAddress, sDAI, wsxmr, BigInt(deadline)],
+            args: [lpAddress, this.userAddress, eth, wsxmr, BigInt(deadline)],
             account: this.userAddress
         });
         
