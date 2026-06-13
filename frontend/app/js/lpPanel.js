@@ -4,6 +4,11 @@ import { CONTRACTS, ABIS, DECIMALS } from './config.js';
 import { readHub, writeHub, getUserAddress } from './viemClient.js';
 import { formatUnits, parseUnits } from 'https://esm.sh/viem@2.7.0';
 
+function isStalePriceError(err) {
+    const msg = (err && err.message) || '';
+    return msg.includes('StalePrice') || msg.includes('0x19abf40e');
+}
+
 export class LPPanel {
     constructor() {
         this.userAddress = null;
@@ -18,7 +23,7 @@ export class LPPanel {
         }
 
         this.isLP = await readHub('hasActiveVault', [this.userAddress]);
-        
+
         if (this.isLP) {
             await this.loadVaultData();
         }
@@ -26,12 +31,28 @@ export class LPPanel {
         return this.isLP;
     }
 
+    /**
+     * Read from hub, auto-refreshing oracle prices once on StalePrice.
+     */
+    async readWithPriceRefresh(fn, args) {
+        try {
+            return await readHub(fn, args);
+        } catch (err) {
+            if (!isStalePriceError(err)) throw err;
+            console.warn(`[LP Panel] StalePrice on ${fn}, updating oracle prices...`);
+            const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
+            await updateOraclePrices();
+            // Retry once after update
+            return await readHub(fn, args);
+        }
+    }
+
     async loadVaultData() {
         this.vault = await readHub('getVault', [this.userAddress]);
-        
-        const health = await readHub('getVaultHealth', [this.userAddress]);
-        const debt = await readHub('getVaultDebt', [this.userAddress]);
-        
+
+        const health = await this.readWithPriceRefresh('getVaultHealth', [this.userAddress]);
+        const debt = await this.readWithPriceRefresh('getVaultDebt', [this.userAddress]);
+
         return {
             vault: this.vault,
             health,

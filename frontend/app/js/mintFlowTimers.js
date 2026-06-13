@@ -69,11 +69,13 @@ export async function startDeadlineTimer(mintFlow) {
                         refundBtn.disabled = true;
                         refundBtn.textContent = 'Checking status...';
                         try {
-                            const { readHub, writeHub } = await import('./viemClient.js');
+                            const { readHub, writeHub, getPublicClient } = await import('./viemClient.js');
+                            const publicClient = getPublicClient();
                             
                             // Check current on-chain status before deciding action
                             const mintReq = await readHub('getMintRequest', [mintFlow.requestId]);
                             const status = Number(mintReq.status);
+                            const currentBlock = await publicClient.getBlockNumber();
                             // MintStatus: 0=INVALID, 1=PENDING, 2=KEY_PROVIDED, 3=READY, 4=COMPLETED, 5=CANCELLED
                             
                             if (status === 5) {
@@ -88,7 +90,16 @@ export async function startDeadlineTimer(mintFlow) {
                                 const { resetMintUI } = await import('./ui.js');
                                 resetMintUI();
                             } else if (status === 1 || status === 2 || status === 3) {
-                                // Still cancellable; call cancelMint
+                                // Still cancellable; verify timeout before calling cancelMint
+                                if (currentBlock < mintReq.timeout) {
+                                    const blocksRemaining = Number(mintReq.timeout) - Number(currentBlock);
+                                    const estSeconds = blocksRemaining * 5;
+                                    const mins = Math.floor(estSeconds / 60);
+                                    const secs = estSeconds % 60;
+                                    throw new Error(
+                                        `Timeout has not expired. Please wait ~${mins}m ${secs}s more (${blocksRemaining} blocks) before cancelling. We are still waiting for the LP to post their address and for you to send your XMR.`
+                                    );
+                                }
                                 refundBtn.textContent = 'Cancelling...';
                                 const receipt = await writeHub('cancelMint', [mintFlow.requestId]);
                                 console.log('cancelMint tx:', receipt.transactionHash);

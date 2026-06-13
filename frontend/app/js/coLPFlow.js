@@ -5,6 +5,11 @@ import { CONTRACTS, ABIS, DECIMALS } from './config.js';
 import { readHub, writeHub, readWsxmr, writeWsxmr, getUserAddress, getPublicClient, getWalletClient } from './viemClient.js';
 import { formatUnits, parseUnits, parseAbi } from 'https://esm.sh/viem@2.7.0';
 
+function isStalePriceError(err) {
+    const msg = (err && err.message) || '';
+    return msg.includes('StalePrice') || msg.includes('0x19abf40e');
+}
+
 export class CoLPFlow {
     constructor() {
         this.userAddress = null;
@@ -19,18 +24,44 @@ export class CoLPFlow {
     }
 
     /**
+     * Read from hub, auto-refreshing oracle prices once on StalePrice.
+     */
+    async readWithPriceRefresh(fn, args) {
+        try {
+            return await readHub(fn, args);
+        } catch (err) {
+            if (!isStalePriceError(err)) throw err;
+            console.warn(`[CoLP] StalePrice on ${fn}, updating oracle prices...`);
+            await this.updatePrices();
+            return await readHub(fn, args);
+        }
+    }
+
+    /**
      * @notice Get the maximum wsXMR a vault can accept for co-LP
      * @param {string} lpVault - LP vault address
      * @returns {Promise<bigint>} maxWsxmrAcceptable
      */
     async getCoLPCapacity(lpVault) {
         const publicClient = getPublicClient();
-        return await publicClient.readContract({
-            address: CONTRACTS.hub,
-            abi: parseAbi(ABIS.hub),
-            functionName: 'getCoLPCapacity',
-            args: [lpVault]
-        });
+        try {
+            return await publicClient.readContract({
+                address: CONTRACTS.hub,
+                abi: parseAbi(ABIS.hub),
+                functionName: 'getCoLPCapacity',
+                args: [lpVault]
+            });
+        } catch (err) {
+            if (!isStalePriceError(err)) throw err;
+            console.warn('[CoLP] StalePrice on getCoLPCapacity, updating oracle prices...');
+            await this.updatePrices();
+            return await publicClient.readContract({
+                address: CONTRACTS.hub,
+                abi: parseAbi(ABIS.hub),
+                functionName: 'getCoLPCapacity',
+                args: [lpVault]
+            });
+        }
     }
 
     /**
@@ -155,10 +186,10 @@ export class CoLPFlow {
             data.lockedCollateral = vault.lockedCollateral?.toString?.() ?? vault.lockedCollateral;
             data.maxCoLPRangeBps = vault.maxCoLPRangeBps ?? vault[13]; // tuple index fallback
 
-            // 2. Oracle prices (best-effort: view reads through diamond fallback often revert)
+            // 2. Oracle prices (auto-update on StalePrice)
             try {
-                const xmrPrice = await readHub('getXmrPrice');
-                const collPrice = await readHub('getCollateralPrice');
+                const xmrPrice = await this.readWithPriceRefresh('getXmrPrice');
+                const collPrice = await this.readWithPriceRefresh('getCollateralPrice');
                 data.xmrPrice = xmrPrice.toString();
                 data.collPrice = collPrice.toString();
                 if (xmrPrice === 0n) warnings.push('XMR oracle price is 0 (likely stale)');

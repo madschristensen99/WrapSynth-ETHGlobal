@@ -40,7 +40,7 @@
     "feeTier": 3000
   },
   "lpConfig": {
-    "defaultLpVault": null,
+    "defaultLpVault": "0x492c0b9F298cC49FE2644a2EBc6eA8dF848c72FB",
     "apiPort": 3001,
     "minCollateralRatio": 150,
     "liquidationThreshold": 120,

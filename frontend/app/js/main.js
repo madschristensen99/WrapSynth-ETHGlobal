@@ -1674,14 +1674,24 @@ async function handleResolveSwap(swap) {
         // PENDING mint: cancel on-chain to recover griefing deposit
         if (swap.type === 'mint' && (swap.state === 'awaiting-lp-key' || swap.state === 'evm-init' || swap.state === 'initiated')) {
             console.log('Resolving stale mint on-chain:', swap.requestId);
-            const { readHub, writeHub } = await import('./viemClient.js');
+            const { readHub, writeHub, getPublicClient } = await import('./viemClient.js');
+            const publicClient = getPublicClient();
             const mintReq = await readHub('getMintRequest', [swap.requestId]);
             const status = Number(mintReq.status);
+            const currentBlock = await publicClient.getBlockNumber();
             // MintStatus: 0=INVALID, 1=PENDING, 2=KEY_PROVIDED, 3=READY, 4=COMPLETED, 5=CANCELLED
             if (status === 5) {
                 await writeHub('withdrawReturns', ['0x0000000000000000000000000000000000000000']);
                 showResumeSuccess(swap.requestId, 'Mint was already cancelled. Your griefing deposit has been claimed.');
             } else if (status === 1 || status === 2 || status === 3) {
+                if (currentBlock < mintReq.timeout) {
+                    const blocksRemaining = Number(mintReq.timeout) - Number(currentBlock);
+                    const estSeconds = blocksRemaining * 5;
+                    const mins = Math.floor(estSeconds / 60);
+                    const secs = estSeconds % 60;
+                    showResumeError(swap.requestId, `Timeout has not expired. Please wait ~${mins}m ${secs}s more (${blocksRemaining} blocks) before cancelling. We are still waiting for the LP to post their address and for you to send your XMR.`);
+                    return;
+                }
                 const receipt = await writeHub('cancelMint', [swap.requestId]);
                 console.log('cancelMint tx:', receipt.transactionHash);
                 showResumeSuccess(swap.requestId, 'Mint cancelled. Your griefing deposit has been refunded.');
@@ -1791,19 +1801,33 @@ async function loadVaults() {
         const activeVaults = [];
         let totalCollateralWei = 0n;
 
-        // Fetch oracle prices for capacity calculation
+        // Fetch oracle prices for capacity calculation (auto-update on StalePrice)
         let xmrPrice = 150;   // fallback USD per XMR
         let collPrice = 2500;  // fallback USD per ETH
         try {
-            // Try to get fresh prices first
             const xmrPriceWei = await readHub('getXmrPrice');
             const collPriceWei = await readHub('getCollateralPrice');
             xmrPrice = Number(xmrPriceWei) / 1e18;
             collPrice = Number(collPriceWei) / 1e18;
             console.log('Oracle prices (fresh):', { xmrPrice, collPrice });
         } catch (e) {
-            console.error('⚠️ ORACLE PRICES ARE STALE! Click "Update Prices" button to refresh.');
-            console.warn('Using fallback prices - capacity will be INCORRECT:', e.message);
+            const msg = (e && e.message) || '';
+            if (msg.includes('StalePrice') || msg.includes('0x19abf40e')) {
+                console.warn('[main] StalePrice on vault capacity load, updating oracle prices...');
+                try {
+                    const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
+                    await updateOraclePrices();
+                    const xmrPriceWei = await readHub('getXmrPrice');
+                    const collPriceWei = await readHub('getCollateralPrice');
+                    xmrPrice = Number(xmrPriceWei) / 1e18;
+                    collPrice = Number(collPriceWei) / 1e18;
+                    console.log('Oracle prices (after update):', { xmrPrice, collPrice });
+                } catch (retryErr) {
+                    console.warn('[main] Price update retry failed:', retryErr.message);
+                }
+            } else {
+                console.warn('Using fallback prices - capacity will be INCORRECT:', e.message);
+            }
             // Fallback to CoinGecko/CoinCap for ETH price
             const fetchedEthPrice = await fetchEthPrice();
             if (fetchedEthPrice) {
@@ -2100,29 +2124,84 @@ async function handleStartMint() {
         
         // Use the default LP vault from config
         const { CONTRACTS } = await import('./config.js');
-        
+
         let lpVault = CONTRACTS.defaultLpVault;
-        
-        // If no default LP vault is configured, try to discover one on-chain
+
+        // If no default LP vault is configured, try the user's own vault first, then discover
         if (!lpVault) {
-            console.log('No defaultLpVault configured; discovering active vaults on-chain...');
+            const userAddr = getUserAddress();
+            console.log('No defaultLpVault configured; trying user vault first, then discovery...');
+
+            // 1. Try user's own vault (with StalePrice retry)
             try {
-                const vaultCount = await readHub('getVaultCount');
-                for (let i = 0n; i < vaultCount; i++) {
-                    const addr = await readHub('getVaultAtIndex', [i]);
-                    if (!addr) continue;
-                    const vault = await readHub('getVault', [addr]);
-                    if (vault.active) {
-                        lpVault = addr;
-                        console.log('Auto-discovered active LP vault:', lpVault);
-                        break;
-                    }
+                const hasVault = await readHub('hasActiveVault', [userAddr]);
+                if (hasVault) {
+                    lpVault = userAddr;
+                    console.log('Using user vault as LP vault:', lpVault);
                 }
             } catch (e) {
-                console.warn('Vault discovery failed:', e.message);
+                const msg = (e && e.message) || '';
+                if (msg.includes('StalePrice') || msg.includes('0x19abf40e')) {
+                    console.warn('[Mint] StalePrice checking user vault, updating prices...');
+                    try {
+                        const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
+                        await updateOraclePrices();
+                        const hasVault = await readHub('hasActiveVault', [userAddr]);
+                        if (hasVault) {
+                            lpVault = userAddr;
+                            console.log('Using user vault as LP vault (after price update):', lpVault);
+                        }
+                    } catch (retryErr) {
+                        console.warn('Price update retry failed:', retryErr.message);
+                    }
+                } else {
+                    console.warn('User vault check failed:', e.message);
+                }
+            }
+
+            // 2. Discover any active vault on-chain (with StalePrice retry per vault)
+            if (!lpVault) {
+                try {
+                    const vaultCount = await readHub('getVaultCount');
+                    for (let i = 0n; i < vaultCount; i++) {
+                        try {
+                            const addr = await readHub('getVaultAtIndex', [i]);
+                            if (!addr) continue;
+                            const vault = await readHub('getVault', [addr]);
+                            if (vault.active) {
+                                lpVault = addr;
+                                console.log('Auto-discovered active LP vault:', lpVault);
+                                break;
+                            }
+                        } catch (innerErr) {
+                            const msg = (innerErr && innerErr.message) || '';
+                            if (msg.includes('StalePrice') || msg.includes('0x19abf40e')) {
+                                console.warn(`[Mint] StalePrice on vault index ${i}, updating prices once...`);
+                                try {
+                                    const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
+                                    await updateOraclePrices();
+                                    // Retry this vault after price update
+                                    const addr = await readHub('getVaultAtIndex', [i]);
+                                    if (!addr) continue;
+                                    const vault = await readHub('getVault', [addr]);
+                                    if (vault.active) {
+                                        lpVault = addr;
+                                        console.log('Auto-discovered active LP vault (after price update):', lpVault);
+                                        break;
+                                    }
+                                } catch (retryErr) {
+                                    console.warn('Vault discovery retry failed:', retryErr.message);
+                                }
+                            }
+                            // Continue to next vault on other errors
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Vault discovery failed:', e.message);
+                }
             }
         }
-        
+
         if (!lpVault) {
             throw new Error(
                 'No active LP vault found. Please ask the operator to set defaultLpVault in deployment.json, ' +

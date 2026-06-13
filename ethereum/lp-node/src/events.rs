@@ -445,6 +445,7 @@ impl EventListener {
             monero_deposit_txid: None,
             monero_deposit_height: None,
             monero_deposit_amount: None,
+            lp_key_posted_at: None,
         };
 
         self.db.insert_mint_task(&task)?;

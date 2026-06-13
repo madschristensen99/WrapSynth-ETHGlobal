@@ -123,7 +123,7 @@ async function fetchVaultAggregates() {
         vaultAddresses.push(CONTRACTS.defaultLpVault);
     }
 
-    // Fetch oracle prices
+    // Fetch oracle prices (auto-update once on StalePrice)
     let xmrPrice = 150;      // fallback USD per XMR
     let collateralPrice = 2500;  // fallback USD per ETH
     try {
@@ -132,7 +132,22 @@ async function fetchVaultAggregates() {
         xmrPrice = Number(xmrPriceWei) / 1e18;
         collateralPrice = Number(collPriceWei) / 1e18;
     } catch (e) {
-        console.warn('[Protocol Stats] Oracle price fetch failed, trying CoinGecko...');
+        const msg = (e && e.message) || '';
+        if (msg.includes('StalePrice') || msg.includes('0x19abf40e')) {
+            console.warn('[Protocol Stats] StalePrice, updating oracle prices...');
+            try {
+                const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
+                await updateOraclePrices();
+                const xmrPriceWei = await readHub('getXmrPrice');
+                const collPriceWei = await readHub('getCollateralPrice');
+                xmrPrice = Number(xmrPriceWei) / 1e18;
+                collateralPrice = Number(collPriceWei) / 1e18;
+            } catch (retryErr) {
+                console.warn('[Protocol Stats] Price update retry failed:', retryErr.message);
+            }
+        } else {
+            console.warn('[Protocol Stats] Oracle price fetch failed, trying CoinGecko...');
+        }
         const fetchedEth = await fetchEthPrice();
         if (fetchedEth) {
             collateralPrice = fetchedEth;

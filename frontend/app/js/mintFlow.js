@@ -74,11 +74,26 @@ export class MintFlow {
 
             console.log('Cancelling mint:', this.requestId);
             
-            // Call cancelMint on the contract
-            const { getWalletClient, getPublicClient } = await import('./viemClient.js');
+            const { getWalletClient, getPublicClient, readHub } = await import('./viemClient.js');
+            const publicClient = await getPublicClient();
+            
+            // Check if timeout has actually been reached before calling cancelMint
+            const mintReq = await readHub('getMintRequest', [this.requestId]);
+            const currentBlock = await publicClient.getBlockNumber();
+            if (currentBlock < mintReq.timeout) {
+                const blocksRemaining = Number(mintReq.timeout) - Number(currentBlock);
+                const estSeconds = blocksRemaining * 5;
+                const mins = Math.floor(estSeconds / 60);
+                const secs = estSeconds % 60;
+                const { showError } = await import('./ui.js');
+                showError(
+                    'Cannot Cancel Yet',
+                    `Timeout has not expired. Please wait ~${mins}m ${secs}s more (${blocksRemaining} blocks) before cancelling. We are still waiting for the LP to post their address and for you to send your XMR.`
+                );
+                return;
+            }
             
             const walletClient = await getWalletClient();
-            const publicClient = await getPublicClient();
             
             const hash = await walletClient.writeContract({
                 address: CONTRACTS.hub,
@@ -768,13 +783,25 @@ export class MintFlow {
 
         if (this.requestId) {
             try {
+                const { getPublicClient } = await import('./viemClient.js');
+                const publicClient = getPublicClient();
                 const mintReq = await readHub('getMintRequest', [this.requestId]);
                 const status = Number(mintReq.status);
+                const currentBlock = await publicClient.getBlockNumber();
                 // MintStatus: 0=INVALID, 1=PENDING, 2=KEY_PROVIDED, 3=READY, 4=COMPLETED, 5=CANCELLED
                 if (status === 5) {
                     await writeHub('withdrawReturns', ['0x0000000000000000000000000000000000000000']);
                     console.log('Mint already cancelled; claimed refund via withdrawReturns');
                 } else if (status === 1 || status === 2 || status === 3) {
+                    if (currentBlock < mintReq.timeout) {
+                        const blocksRemaining = Number(mintReq.timeout) - Number(currentBlock);
+                        const estSeconds = blocksRemaining * 5;
+                        const mins = Math.floor(estSeconds / 60);
+                        const secs = estSeconds % 60;
+                        throw new Error(
+                            `Timeout has not expired. Please wait ~${mins}m ${secs}s more (${blocksRemaining} blocks) before cancelling. We are still waiting for the LP to post their address and for you to send your XMR.`
+                        );
+                    }
                     await writeHub('cancelMint', [this.requestId]);
                     console.log('Mint request canceled on EVM');
                 } else {
@@ -782,6 +809,7 @@ export class MintFlow {
                 }
             } catch (error) {
                 console.error('Error canceling mint on EVM:', error);
+                throw error;
             }
         }
 
