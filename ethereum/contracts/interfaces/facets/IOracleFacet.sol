@@ -19,7 +19,7 @@ interface IOracleFacet {
     // - PRICE_MAX_AGE
     // - LIQUIDITY_PRICE_MAX_AGE
     // - XMR_USD_FEED_ID
-    // - SDAI_USD_FEED_ID
+    // - COLLATERAL_USD_FEED_ID
     
     // ========== FUNCTIONS ==========
     

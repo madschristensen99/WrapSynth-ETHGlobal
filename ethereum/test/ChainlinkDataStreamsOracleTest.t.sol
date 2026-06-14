@@ -27,16 +27,18 @@ contract ChainlinkDataStreamsOracleTest is Test {
 
         verifier = new MockVerifierProxy();
         wsxmr = new wsXMR();
-        hub = new wsXmrHub(address(wsxmr), address(verifier));
+        address collateral = address(0xDA1); // dummy: this test only exercises oracle prices
+
+        hub = new wsXmrHub(address(wsxmr), address(verifier), collateral);
 
         oracleFacet = new ChainlinkDataStreamsOracleFacet(
-            address(wsxmr), address(verifier), XMR_FEED_ID, ETH_FEED_ID
+            address(wsxmr), address(verifier), collateral, XMR_FEED_ID, ETH_FEED_ID
         );
-        VaultFacet vaultFacet = new VaultFacet(address(wsxmr), address(verifier));
-        MintFacet mintFacet = new MintFacet(address(wsxmr), address(verifier));
-        BurnFacet burnFacet = new BurnFacet(address(wsxmr), address(verifier));
-        LiquidationFacet liquidationFacet = new LiquidationFacet(address(wsxmr), address(verifier));
-        YieldFacet yieldFacet = new YieldFacet(address(wsxmr), address(verifier));
+        VaultFacet vaultFacet = new VaultFacet(address(wsxmr), address(verifier), collateral);
+        MintFacet mintFacet = new MintFacet(address(wsxmr), address(verifier), collateral);
+        BurnFacet burnFacet = new BurnFacet(address(wsxmr), address(verifier), collateral);
+        LiquidationFacet liquidationFacet = new LiquidationFacet(address(wsxmr), address(verifier), collateral);
+        YieldFacet yieldFacet = new YieldFacet(address(wsxmr), address(verifier), collateral);
 
         hub.registerFacets(
             address(vaultFacet),

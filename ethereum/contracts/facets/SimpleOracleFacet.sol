@@ -16,8 +16,8 @@ contract SimpleOracleFacet is wsXmrStorage, IOracleFacet {
     event PricesUpdated(uint256 xmrPrice, uint256 daiPrice, uint256 timestamp);
     event UpdaterChanged(address indexed oldUpdater, address indexed newUpdater);
     
-    constructor(address _wsxmrToken, address _verifierProxy, address _priceUpdater) 
-        wsXmrStorage(_wsxmrToken, _verifierProxy) 
+    constructor(address _wsxmrToken, address _verifierProxy, address _collateralToken, address _priceUpdater) 
+        wsXmrStorage(_wsxmrToken, _verifierProxy, _collateralToken) 
     {
         priceUpdater = _priceUpdater;
     }

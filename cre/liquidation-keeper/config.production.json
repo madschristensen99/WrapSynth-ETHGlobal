@@ -1,0 +1,9 @@
+{
+  "schedule": "0 */5 * * * *",
+  "chainName": "ethereum-testnet-sepolia-base-1",
+  "hubAddress": "0x65D3b7ff17DFa21fd6BB1553D51336b66548a1C3",
+  "registryAddress": "0x0000000000000000000000000000000000000000",
+  "scanStartIndex": 0,
+  "scanCount": 100,
+  "gasLimit": "1500000"
+}

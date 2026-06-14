@@ -54,8 +54,14 @@ contract ChainlinkDataStreamsOracleFacet is wsXmrStorage, IOracleFacet {
 
     // ========== CONSTRUCTOR ==========
 
-    constructor(address _wsxmrToken, address _verifierProxy, bytes32 _xmrFeedId, bytes32 _daiFeedId)
-        wsXmrStorage(_wsxmrToken, _verifierProxy)
+    constructor(
+        address _wsxmrToken,
+        address _verifierProxy,
+        address _collateralToken,
+        bytes32 _xmrFeedId,
+        bytes32 _daiFeedId
+    )
+        wsXmrStorage(_wsxmrToken, _verifierProxy, _collateralToken)
     {
         xmrFeedId = _xmrFeedId;
         daiFeedId = _daiFeedId;

@@ -8,29 +8,14 @@ const DP = D.pool || {};
 const DLC = D.lpConfig || {};
 
 export const NETWORKS = {
-    gnosis: {
-        id: D.chainId || 100,
-        name: 'Gnosis Chain',
-        rpcUrls: [
-            'https://rpc.ankr.com/gnosis',
-            'https://gnosis.api.onfinality.io/public',
-            'https://rpc.gnosis.gateway.fm'
-        ],
-        blockExplorer: D.explorer || 'https://gnosisscan.io',
-        nativeCurrency: {
-            name: 'xDAI',
-            symbol: 'xDAI',
-            decimals: 18
-        }
-    },
     baseSepolia: {
-        id: 84532,
-        name: 'Base Sepolia',
+        id: D.chainId || 84532,
+        name: D.network || 'Base Sepolia',
         rpcUrls: [
-            'https://sepolia.base.org',
+            D.rpcUrl || 'https://sepolia.base.org',
             'https://base-sepolia-rpc.publicnode.com'
         ],
-        blockExplorer: 'https://sepolia.basescan.org',
+        blockExplorer: D.explorer || 'https://sepolia.basescan.org',
         nativeCurrency: {
             name: 'Ether',
             symbol: 'ETH',
@@ -43,23 +28,26 @@ export const NETWORKS = {
 // Stream IDs and verifier are confirmed against the testnet data engine
 // (see frontend/report-proxy/checkFeeds.js).
 export const ORACLE_CONFIG = {
-    reportProxyUrl: (typeof window !== 'undefined' && window.REPORT_PROXY_URL) || 'http://localhost:3002',
+    reportProxyUrl: (typeof window !== 'undefined' && window.REPORT_PROXY_URL) || 'http://localhost:3001',
     xmrFeedId: '0x0003c70558bd921b1559d37b8e347797f121d1240e7386e68b2bee9b731b0833', // XMR/USD-RefPrice-testnet-production
-    daiFeedId: '0x0003649272a19e143a7f4c2d98905b413e98dce81fb09287dcf4c513cba5cc72', // DAI/USD-RefPrice-DSSepolia-Premium-GlobalTestnet-003
+    ethFeedId: '0x000359843a543ee2fe414dc14c7e7920ef10f4372990b79d6361cdc0dd1ba782', // ETH/USD-RefPrice-testnet-production
     verifierProxy: '0x8Ac491b7c118a0cdcF048e0f707247fD8C9575f9',
     linkToken: '0xE4aB69C077896252FAFBD49EFD26B5D171A32410'
 };
 
 // Contract addresses - source of truth: ../../deployment.json
 export const CONTRACTS = {
-    hub: DC.wsXmrHub || '0x1fb8E7593B01bCdAE13e5b63e529f0e30a3ebD50',
-    wsxmrToken: DC.wsXMR || '0x30Aeb2A142744430fFD7D698D5C7C41769CE1279',
-    liquidityRouter: DC.liquidityRouter || '0x6893f38e1DeEdCa95ce8995B01550921cEe353a1',
-    sDAI: DE.sDAI || '0xaf204776c7245bF4147c2612BF6e5972Ee483701',
-    uniswapV3Pool: DP.uniswapV3Pool || '0x3b3f640b137ed13c79d2d51c54329816a6fbd85d',
+    hub: DC.wsXmrHub || '0x0454983E17b803a2C6ff0d98d5D58676525F4A92',
+    wsxmrToken: DC.wsXMR || '0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b',
+    liquidityRouter: DC.liquidityRouter || '0x0F9172c037eC5dFFa940aFa357Ee0A52B5a08d71',
+    sDAI: DE.sDAI || '0x57cA07e0443c7Dc720CAd8AF63D8a6bBeDabD202',
+    uniswapV3Pool: DP.uniswapV3Pool || '0x79cF96e0FA6aBE3cF02994B35c68A69359857Ae9',
     // Default LP vault to use for mints (the active LP running the LP node)
-    defaultLpVault: DLC.defaultLpVault || '0x492c0b9F298cC49FE2644a2EBc6eA8dF848c72FB'
+    defaultLpVault: DLC.defaultLpVault || null
 };
+
+// Deployment block for event pagination
+export const DEPLOYMENT_BLOCK = D.deploymentBlock ? BigInt(D.deploymentBlock) : 0n;
 
 // LP Server Configuration
 export const LP_SERVER_CONFIG = {
@@ -76,11 +64,46 @@ export const LP_SERVER_CONFIG = {
     }
 };
 
+// Uniswap Swap Configuration (Base Sepolia)
+// The Swap tab talks DIRECTLY to the on-chain Uniswap V3 contracts (QuoterV2 +
+// SwapRouter02) — NOT the Trading API. The Trading API returns 404 ResourceNotFound
+// for custom Base Sepolia pools (its routing backend doesn't index them), so it cannot
+// quote tWSXMR↔WETH on testnet. The on-chain pool exists and is seeded, so we route
+// through it ourselves. (proxy/ + swap-test/ remain in the repo for a future mainnet path.)
+export const UNISWAP_CONFIG = {
+    chainId: 84532,
+    chainIdHex: '0x14a34',
+    chainName: 'Base Sepolia Testnet',
+    rpcUrl: 'https://sepolia.base.org',
+    blockExplorer: 'https://sepolia.basescan.org',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    proxyUrl: 'http://localhost:3002', // unused by the Swap tab; kept for future mainnet/Trading-API path
+
+    // On-chain Uniswap V3 (Base Sepolia) — verified against Uniswap sdk-core addresses.ts
+    quoterV2:     '0xC5290058841028F1614F3A6F0F5816cAd0df5E27',
+    swapRouter02: '0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4',
+    weth:         '0x4200000000000000000000000000000000000006',
+    slippageBps:  50,    // 0.5% default slippage
+
+    tWSXMR: '0xdC8A3309e384d4b669feB350F97204c3e8404477',
+
+    // Token registry for omni-token swaps. WETH is the routing hub: every non-WETH token
+    // carries `wethPoolFee` = the fee tier of its WETH pool on Base Sepolia. Trades are
+    // single-hop when one side is WETH, else multi-hop via WETH. To add a token, append an
+    // entry whose WETH pool actually has liquidity at the given `wethPoolFee`.
+    tokens: {
+        tWSXMR: { address: '0xdC8A3309e384d4b669feB350F97204c3e8404477', symbol: 'tWSXMR', decimals: 8,  name: 'Test Wrapped Scaled XMR', wethPoolFee: 100 },
+        WETH:   { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH',   decimals: 18, name: 'Wrapped Ether', isWeth: true },
+        USDC:   { address: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', symbol: 'USDC',   decimals: 6,  name: 'USD Coin', wethPoolFee: 3000 },
+    },
+    permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+};
+
 // Token decimals
 export const DECIMALS = {
     wsXMR: 8,      // EVM wsXMR token decimals
     XMR: 12,       // Monero atomic units decimals
-    ETH: 18,       // ETH/xDAI decimals
+    ETH: 18,       // ETH decimals
     USD: 18        // Pyth price decimals
 };
 
@@ -317,7 +340,7 @@ export const ABIS = {
         'error PoolNotInitialized()',
         'error PoolAlreadyInitialized()',
 
-        // Oracle (ChainlinkDataStreamsOracleFacet — bytes[] = [XMR fullReport, DAI fullReport])
+        // Oracle (ChainlinkDataStreamsOracleFacet — bytes[] = [XMR fullReport, ETH fullReport])
         'function updateOraclePrices(bytes[] calldata) external payable',
         'function getXmrPrice() external view returns (uint256)',
         'function getCollateralPrice() external view returns (uint256)',
@@ -332,7 +355,7 @@ export const ABIS = {
         'event MintFinalized(bytes32 indexed requestId, bytes32 secret)',
         'event MintCancelled(bytes32 indexed requestId)',
         'event BurnRequested(bytes32 indexed requestId, address indexed user, address indexed lpVault, uint256 wsxmrAmount, uint256 xmrAmount, uint256 rewardCollateral, bytes32 claimCommitment)',
-        'event HashProposed(bytes32 indexed requestId, bytes32 secretHash)',
+        'event HashProposed(bytes32 indexed requestId, bytes32 secretHash, bytes32 lpPublicSpendKey, bytes32 lpPublicViewKey)',
         'event BurnCommitted(bytes32 indexed requestId, uint256 deadline)',
         'event BurnFinalized(bytes32 indexed requestId, bytes32 secret, uint256 reward)',
         'event BurnSlashed(bytes32 indexed requestId, address indexed user, uint256 totalSeized)',
@@ -382,7 +405,8 @@ export const ABIS = {
         'function approve(address spender, uint256 amount) external returns (bool)',
         'function allowance(address owner, address spender) external view returns (uint256)',
         'function transfer(address to, uint256 amount) external returns (bool)',
-        'function totalSupply() external view returns (uint256)'
+        'function totalSupply() external view returns (uint256)',
+        'error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 needed)'
     ]
 };
 

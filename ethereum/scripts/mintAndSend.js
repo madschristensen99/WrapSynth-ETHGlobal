@@ -1,11 +1,23 @@
 #!/usr/bin/env node
 require('dotenv').config();
 const { ethers } = require('ethers');
-const { WrapperBuilder } = require('@redstone-finance/evm-connector');
-const { getSignersForDataServiceId } = require('@redstone-finance/oracles-smartweave-contracts');
-const { HUB_ADDRESS, WSXMR_ADDRESS, ED25519_HELPER } = require('./deploymentConfig');
+const { execSync } = require('child_process');
+const path = require('path');
+const { HUB_ADDRESS, WSXMR_ADDRESS, ED25519_HELPER, RPC_URL } = require('./deploymentConfig');
 
-const RECIPIENT_ADDRESS = '0xDFdC570ec0586D5c00735a2277c21Dcc254B3917';
+const PROXY_DIR = path.join(__dirname, '../../frontend/report-proxy');
+const XMR_FEED = '0x0003c70558bd921b1559d37b8e347797f121d1240e7386e68b2bee9b731b0833';
+const ETH_FEED = '0x000359843a543ee2fe414dc14c7e7920ef10f4372990b79d6361cdc0dd1ba782';
+
+function fetchReport(feedId) {
+    const out = execSync(`node "${path.join(PROXY_DIR, 'fetchReportHex.js')}" ${feedId}`, {
+        encoding: 'utf8',
+        env: { ...process.env, NODE_NO_WARNINGS: '1' }
+    });
+    return out.trim();
+}
+
+const RECIPIENT_ADDRESS = '0x15d265Dc32a575755ACA19b5EcEAB8018CdD26F1';
 
 async function main() {
     if (!process.env.PRIVATE_KEY) {
@@ -13,7 +25,7 @@ async function main() {
         process.exit(1);
     }
 
-    const provider = new ethers.providers.JsonRpcProvider('https://rpc.gnosischain.com');
+    const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
     const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
     console.log('Wallet:', wallet.address);
     console.log('Recipient:', RECIPIENT_ADDRESS);
@@ -50,17 +62,15 @@ async function main() {
     const wsxmr = new ethers.Contract(WSXMR_ADDRESS, wsxmrAbi, wallet);
     const ed25519Helper = new ethers.Contract(ED25519_HELPER, ed25519HelperAbi, provider);
 
-    const authorizedSigners = getSignersForDataServiceId('redstone-primary-prod');
-    const wrappedHub = WrapperBuilder.wrap(hub).usingDataService({
-        dataServiceId: 'redstone-primary-prod',
-        uniqueSignersCount: 3,
-        dataPackagesIds: ['XMR', 'DAI'],
-        authorizedSigners
-    });
+    // Step 1: Push fresh prices (Chainlink Data Streams)
+    console.log('Fetching Chainlink Data Streams reports...');
+    const xmrReport = fetchReport(XMR_FEED);
+    const ethReport = fetchReport(ETH_FEED);
+    console.log('  XMR report:', xmrReport.slice(0, 30) + '...');
+    console.log('  ETH report:', ethReport.slice(0, 30) + '...');
 
-    // Step 1: Push fresh prices
     console.log('Pushing fresh oracle prices...');
-    const priceTx = await wrappedHub.updateOraclePrices([], { gasLimit: 500000 });
+    const priceTx = await hub.updateOraclePrices([xmrReport, ethReport], { gasLimit: 500000 });
     await priceTx.wait();
     console.log('  Prices updated:', priceTx.hash);
 

@@ -12,7 +12,7 @@ import {LiquidationFacet} from "../contracts/facets/LiquidationFacet.sol";
 import {YieldFacet} from "../contracts/facets/YieldFacet.sol";
 import {wsXMR} from "../contracts/wsXMR.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {GnosisAddresses} from "../contracts/GnosisAddresses.sol";
+import {BaseSepoliaAddresses} from "../contracts/BaseSepoliaAddresses.sol";
 import {Ed25519} from "../contracts/Ed25519.sol";
 import {YieldLogic} from "../contracts/libraries/YieldLogic.sol";
 import {IErrors} from "../contracts/interfaces/IErrors.sol";
@@ -48,7 +48,7 @@ contract AuditRegressionTest is Test {
     uint256 constant DAI_PRICE_8DEC = 1_00000000;     // $1 in 8 decimals
 
     function setUp() public {
-        string memory rpcUrl = vm.envOr("GNOSIS_RPC_URL", string("https://rpc.gnosischain.com"));
+        string memory rpcUrl = vm.envOr("BASE_SEPOLIA_RPC_URL", string("https://sepolia.base.org"));
         vm.createSelectFork(rpcUrl);
 
         vm.deal(address(this), 1_000_000 ether);
@@ -58,14 +58,15 @@ contract AuditRegressionTest is Test {
 
         verifier = new MockVerifierProxy();
         wsxmr = new wsXMR();
-        hub = new wsXmrHub(address(wsxmr), address(verifier));
+        address collateral = BaseSepoliaAddresses.WETH;
+        hub = new wsXmrHub(address(wsxmr), address(verifier), collateral);
 
-        oracleFacet = new SimpleOracleFacet(address(wsxmr), address(verifier), address(this));
-        vaultFacet = new VaultFacet(address(wsxmr), address(verifier));
-        mintFacet = new MintFacet(address(wsxmr), address(verifier));
-        burnFacet = new BurnFacet(address(wsxmr), address(verifier));
-        liquidationFacet = new LiquidationFacet(address(wsxmr), address(verifier));
-        yieldFacet = new YieldFacet(address(wsxmr), address(verifier));
+        oracleFacet = new SimpleOracleFacet(address(wsxmr), address(verifier), collateral, address(this));
+        vaultFacet = new VaultFacet(address(wsxmr), address(verifier), collateral);
+        mintFacet = new MintFacet(address(wsxmr), address(verifier), collateral);
+        burnFacet = new BurnFacet(address(wsxmr), address(verifier), collateral);
+        liquidationFacet = new LiquidationFacet(address(wsxmr), address(verifier), collateral);
+        yieldFacet = new YieldFacet(address(wsxmr), address(verifier), collateral);
 
         hub.registerFacets(
             address(vaultFacet),
@@ -77,9 +78,6 @@ contract AuditRegressionTest is Test {
         );
 
         wsxmr.setHub(address(hub));
-
-        // Fund MockSavingsDAI wrapper with WETH so redeem() works
-        deal(GnosisAddresses.XDAI, GnosisAddresses.SDAI, 100000 ether);
 
         // Seed attacker with wsXMR for potential abuse
         deal(address(wsxmr), attacker, 1_000_000e8);
@@ -100,12 +98,12 @@ contract AuditRegressionTest is Test {
 
     function test_C1_DirectCallToTransferAsset_Reverts() public {
         vm.expectRevert(IwsXmrHub.Unauthorized.selector);
-        hub.transferAsset(GnosisAddresses.SDAI, attacker, 1000);
+        hub.transferAsset(BaseSepoliaAddresses.WETH, attacker, 1000);
     }
 
     function test_C1_DirectCallToApproveAsset_Reverts() public {
         vm.expectRevert(IwsXmrHub.Unauthorized.selector);
-        hub.approveAsset(GnosisAddresses.SDAI, attacker, 1000);
+        hub.approveAsset(BaseSepoliaAddresses.WETH, attacker, 1000);
     }
 
     /// @notice C1-2: Transient flag is restored after delegatecall, preventing persistence
@@ -123,7 +121,7 @@ contract AuditRegressionTest is Test {
 
         // After the call, a direct call to a privileged function must still revert
         vm.expectRevert(IwsXmrHub.Unauthorized.selector);
-        hub.transferAsset(GnosisAddresses.SDAI, attacker, 1);
+        hub.transferAsset(BaseSepoliaAddresses.WETH, attacker, 1);
     }
 
     /// @notice C1-3: cancelMint no longer pushes ETH; it queues to pendingReturns
@@ -242,10 +240,10 @@ contract AuditRegressionTest is Test {
         // wsXmrStorage slot layout (immutables excluded):
         //   0: vaultFacet, 1: mintFacet, 2: burnFacet, 3: liquidationFacet,
         //   4: yieldFacet, 5: oracleFacet, 6: facets mapping, 7: liquidityRouter,
-        //   8: lastXmrPrice, 9: lastXmrPriceTimestamp, 10: lastCollateralPrice,
-        //   11: lastCollateralPriceTimestamp, 12: lastBuyTimestamp, 13: globalTotalDebt,
-        //   14: globalDebtIndex  (N2: MUST update if wsXmrStorage layout changes)
-        bytes32 globalDebtIndexSlot = bytes32(uint256(14));
+        //   8: swapRouter, 9: lastXmrPrice, 10: lastXmrPriceTimestamp, 11: lastCollateralPrice,
+        //   12: lastCollateralPriceTimestamp, 13: lastBuyTimestamp, 14: globalTotalDebt,
+        //   15: globalDebtIndex  (N2: MUST update if wsXmrStorage layout changes)
+        bytes32 globalDebtIndexSlot = bytes32(uint256(15));
         vm.store(address(hub), globalDebtIndexSlot, bytes32(uint256(0.5e18)));
 
         // After manipulation, hub index is 0.5e18
@@ -644,9 +642,9 @@ contract AuditRegressionTest is Test {
         VaultFacet(address(hub)).createVault();
         vm.stopPrank();
         // Directly give sDAI and deposit shares (avoids xDAI wrapping issues on fork)
-        deal(GnosisAddresses.SDAI, who, amount);
+        deal(BaseSepoliaAddresses.WETH, who, amount);
         vm.startPrank(who);
-        IERC20(GnosisAddresses.SDAI).approve(address(hub), amount);
+        IERC20(BaseSepoliaAddresses.WETH).approve(address(hub), amount);
         VaultFacet(address(hub)).depositShares(amount);
         vm.stopPrank();
     }

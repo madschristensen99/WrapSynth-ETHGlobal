@@ -296,3 +296,7 @@ datasets/
 # Transaction data with sensitive keys
 transaction_data.json
 
+# Agents and skills
+.agents/
+skills-lock.json
+.claude/

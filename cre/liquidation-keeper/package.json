@@ -1,0 +1,16 @@
+{
+  "name": "wrapsynth-liquidation-keeper",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chainlink CRE workflow that keeps WrapSynth LP vaults overcollateralized by flagging sub-120% CR vaults on-chain for liquidation/backstop.",
+  "type": "module",
+  "scripts": {
+    "postinstall": "bunx cre-setup",
+    "simulate": "cre workflow simulate ../liquidation-keeper --target local-simulation --env ../.env",
+    "build": "cre workflow build ../liquidation-keeper"
+  },
+  "dependencies": {
+    "@chainlink/cre-sdk": "^1.11.0",
+    "viem": "^2.21.0"
+  }
+}

@@ -1,18 +1,29 @@
 #!/usr/bin/env node
 /**
- * Mint and CoLP Test Script
+ * Mint and CoLP Test Script (Base Sepolia / Chainlink Data Streams)
  * 
  * This script tests the mint and CoLP flow with a small amount:
  * 1. Mints a small amount of wsXMR (0.001 XMR)
  * 2. Deposits half of it into a CoLP position
  * 3. Tests vault collateral withdrawal after CoLP deployment
- * 4. Tests depositing collateral back into the vault
  */
 require('dotenv').config();
 const { ethers } = require('ethers');
-const { WrapperBuilder } = require('@redstone-finance/evm-connector');
-const { getSignersForDataServiceId } = require('@redstone-finance/oracles-smartweave-contracts');
-const { HUB_ADDRESS, WSXMR_ADDRESS, ED25519_HELPER } = require('./deploymentConfig');
+const { execSync } = require('child_process');
+const path = require('path');
+const { HUB_ADDRESS, WSXMR_ADDRESS, ED25519_HELPER, RPC_URL } = require('./deploymentConfig');
+
+const PROXY_DIR = path.join(__dirname, '../../frontend/report-proxy');
+const XMR_FEED = '0x0003c70558bd921b1559d37b8e347797f121d1240e7386e68b2bee9b731b0833';
+const ETH_FEED = '0x000359843a543ee2fe414dc14c7e7920ef10f4372990b79d6361cdc0dd1ba782';
+
+function fetchReport(feedId) {
+    const out = execSync(`node "${path.join(PROXY_DIR, 'fetchReportHex.js')}" ${feedId}`, {
+        encoding: 'utf8',
+        env: { ...process.env, NODE_NO_WARNINGS: '1' }
+    });
+    return out.trim();
+}
 
 async function main() {
     if (!process.env.PRIVATE_KEY) {
@@ -20,11 +31,14 @@ async function main() {
         process.exit(1);
     }
 
-    const provider = new ethers.providers.JsonRpcProvider('https://rpc.gnosischain.com');
+    const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
     const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
     console.log('Wallet:', wallet.address);
+    console.log('RPC:', RPC_URL);
 
     const hubAbi = [
+        'function createVault() external',
+        'function depositCollateral(uint256 amount) external',
         'function initiateMint(address lpVault, address initiator, uint256 wsxmrAmount, bytes32 claimCommitment, bytes32 userPublicKey) external payable returns (bytes32)',
         'function provideLPKey(bytes32 requestId, bytes32 lpPublicSpendKey, bytes32 lpPublicViewKey) external',
         'function setMintReady(bytes32 requestId) external payable',
@@ -36,6 +50,11 @@ async function main() {
         'function withdrawCollateral(uint256 amount) external',
         'function getPendingReturns(address user, address token) external view returns (uint256)',
         'function withdrawReturns(address token) external',
+        'function setMaxMintBps(uint16 maxMintBps) external',
+        'function setMinBurnAmount(uint256 minAmount) external',
+        'function setMintGriefingDeposit(uint256 deposit) external',
+        'function setMintReadyBond(uint256 bond) external',
+        'function setVaultMarketMetrics(uint16 mintFeeBps, uint16 burnRewardBps) external',
         'event CoLPDeployed(address indexed lpVault, address indexed user, uint256 indexed tokenId, uint256 sDAIShares, uint256 wsxmrAmount, uint16 rangeBps)'
     ];
 
@@ -55,94 +74,109 @@ async function main() {
     const wsxmr = new ethers.Contract(WSXMR_ADDRESS, wsxmrAbi, wallet);
     const ed25519Helper = new ethers.Contract(ED25519_HELPER, ed25519HelperAbi, provider);
 
-    const authorizedSigners = getSignersForDataServiceId('redstone-primary-prod');
-    const wrappedHub = WrapperBuilder.wrap(hub).usingDataService({
-        dataServiceId: 'redstone-primary-prod',
-        uniqueSignersCount: 3,
-        dataPackagesIds: ['XMR', 'DAI'],
-        authorizedSigners
-    });
+    // Ensure vault exists
+    const hasVault = await hub.hasActiveVault(wallet.address);
+    if (!hasVault) {
+        console.log('Creating vault...');
+        await (await hub.createVault({ gasLimit: 300000 })).wait();
+        await (await hub.setMaxMintBps(0, { gasLimit: 200000 })).wait();
+        await (await hub.setMinBurnAmount(0, { gasLimit: 200000 })).wait();
+        await (await hub.setMintGriefingDeposit(ethers.utils.parseEther('0.001'), { gasLimit: 200000 })).wait();
+        await (await hub.setMintReadyBond(ethers.utils.parseEther('0.001'), { gasLimit: 200000 })).wait();
+        await (await hub.setVaultMarketMetrics(50, 30, { gasLimit: 200000 })).wait();
+        console.log('Vault created and configured');
+    } else {
+        console.log('Vault exists');
+    }
 
     // Step 1: Push fresh prices
     console.log('Pushing fresh oracle prices...');
-    const priceTx = await wrappedHub.updateOraclePrices([], { gasLimit: 500000 });
+    const xmrBlob = fetchReport(XMR_FEED);
+    const ethBlob = fetchReport(ETH_FEED);
+    const priceTx = await hub.updateOraclePrices([xmrBlob, ethBlob], { gasLimit: 500000 });
     await priceTx.wait();
     console.log('  Prices updated:', priceTx.hash);
 
-    // Step 2: Mint wsXMR
-    console.log('Minting wsXMR...');
-    const secret = ethers.utils.randomBytes(32);
-    const secretHex = ethers.utils.hexlify(secret);
-    console.log('  Secret (save this!):', secretHex);
-    const commitment = await ed25519Helper.computeCommitment(secret);
-    const xmrAmount = ethers.BigNumber.from('100000000'); // 0.001 XMR - small test amount
-    const griefingDeposit = ethers.utils.parseEther('0.001');
+    // Step 2: Mint wsXMR (skip if we already have balance — vault is undercollateralized)
+    let wsxmrBalance = await wsxmr.balanceOf(wallet.address);
+    console.log('Current wsXMR balance:', ethers.utils.formatUnits(wsxmrBalance, 8));
 
-    const [userPubX, userPubY] = await ed25519Helper.scalarMultBase(ethers.BigNumber.from(secret));
-    const compressed = await ed25519Helper.compressPublicKey(userPubX, userPubY);
-    const userPublicKey = ethers.utils.hexZeroPad(compressed.toHexString(), 32);
+    const MIN_WSXM_BALANCE = ethers.BigNumber.from('10000'); // 0.0001 wsXMR
+    if (wsxmrBalance.lt(MIN_WSXM_BALANCE)) {
+        console.log('Minting wsXMR...');
+        const secret = ethers.utils.randomBytes(32);
+        const secretHex = ethers.utils.hexlify(secret);
+        console.log('  Secret (save this!):', secretHex);
+        const commitment = await ed25519Helper.computeCommitment(secret);
+        const xmrAmount = ethers.BigNumber.from('1500000000');
+        const griefingDeposit = ethers.utils.parseEther('0.001');
 
-    const mintTx = await hub.initiateMint(
-        wallet.address,
-        wallet.address,
-        xmrAmount,
-        commitment,
-        userPublicKey,
-        { value: griefingDeposit, gasLimit: 500000, maxPriorityFeePerGas: ethers.utils.parseUnits('10', 'gwei'), maxFeePerGas: ethers.utils.parseUnits('20', 'gwei') }
-    );
-    const mintReceipt = await mintTx.wait();
-    const requestId = mintReceipt.logs[0].topics[1];
-    console.log('  Mint initiated:', mintTx.hash);
-    console.log('  Request ID:', requestId);
+        const [userPubX, userPubY] = await ed25519Helper.scalarMultBase(ethers.BigNumber.from(secret));
+        const compressed = await ed25519Helper.compressPublicKey(userPubX, userPubY);
+        const userPublicKey = ethers.utils.hexZeroPad(compressed.toHexString(), 32);
 
-    // Refresh prices
-    const refreshTx = await wrappedHub.updateOraclePrices([], { gasLimit: 500000 });
-    await refreshTx.wait();
-    console.log('  Prices refreshed');
+        const mintTx = await hub.initiateMint(
+            wallet.address,
+            wallet.address,
+            xmrAmount,
+            commitment,
+            userPublicKey,
+            { value: griefingDeposit, gasLimit: 500000 }
+        );
+        const mintReceipt = await mintTx.wait();
+        const requestId = mintReceipt.logs[0].topics[1];
+        console.log('  Mint initiated:', mintTx.hash);
+        console.log('  Request ID:', requestId);
 
-    // LP key
-    const lpSecret = ethers.utils.randomBytes(32);
-    const [lpPubX, lpPubY] = await ed25519Helper.scalarMultBase(ethers.BigNumber.from(lpSecret));
-    const lpPublicKey = ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(['uint256', 'uint256'], [lpPubX, lpPubY]));
-    
-    try {
-        const provideTx = await hub.provideLPKey(requestId, lpPublicKey, lpPublicKey, { gasLimit: 200000, maxPriorityFeePerGas: ethers.utils.parseUnits('10', 'gwei'), maxFeePerGas: ethers.utils.parseUnits('20', 'gwei') });
-        await provideTx.wait();
-        console.log('  LP key provided');
-    } catch (err) {
-        if (err.code === 'TRANSACTION_REPLACED' && err.replacement && err.receipt.status === 1) {
-            console.log('  LP key provided (tx replaced but succeeded)');
-        } else {
-            throw err;
+        const refreshTx = await hub.updateOraclePrices([fetchReport(XMR_FEED), fetchReport(ETH_FEED)], { gasLimit: 500000 });
+        await refreshTx.wait();
+        console.log('  Prices refreshed');
+
+        const lpSecret = ethers.utils.randomBytes(32);
+        const [lpPubX, lpPubY] = await ed25519Helper.scalarMultBase(ethers.BigNumber.from(lpSecret));
+        const lpPublicKey = ethers.utils.keccak256(ethers.utils.defaultAbiCoder.encode(['uint256', 'uint256'], [lpPubX, lpPubY]));
+        
+        try {
+            const provideTx = await hub.provideLPKey(requestId, lpPublicKey, lpPublicKey, { gasLimit: 200000 });
+            await provideTx.wait();
+            console.log('  LP key provided');
+        } catch (err) {
+            if (err.code === 'TRANSACTION_REPLACED' && err.replacement && err.receipt.status === 1) {
+                console.log('  LP key provided (tx replaced but succeeded)');
+            } else {
+                throw err;
+            }
         }
-    }
 
-    try {
-        const readyTx = await hub.setMintReady(requestId, { value: griefingDeposit, gasLimit: 200000, maxPriorityFeePerGas: ethers.utils.parseUnits('10', 'gwei'), maxFeePerGas: ethers.utils.parseUnits('20', 'gwei') });
-        await readyTx.wait();
-        console.log('  Mint ready');
-    } catch (err) {
-        if (err.code === 'TRANSACTION_REPLACED' && err.replacement && err.receipt.status === 1) {
-            console.log('  Mint ready (tx replaced but succeeded)');
-        } else {
-            throw err;
+        try {
+            const readyTx = await hub.setMintReady(requestId, { value: griefingDeposit, gasLimit: 200000 });
+            await readyTx.wait();
+            console.log('  Mint ready');
+        } catch (err) {
+            if (err.code === 'TRANSACTION_REPLACED' && err.replacement && err.receipt.status === 1) {
+                console.log('  Mint ready (tx replaced but succeeded)');
+            } else {
+                throw err;
+            }
         }
-    }
 
-    try {
-        const finalizeTx = await hub.finalizeMint(requestId, secret, { gasLimit: 1000000, maxPriorityFeePerGas: ethers.utils.parseUnits('10', 'gwei'), maxFeePerGas: ethers.utils.parseUnits('20', 'gwei') });
-        await finalizeTx.wait();
-        console.log('  Mint finalized:', finalizeTx.hash);
-    } catch (err) {
-        if (err.code === 'TRANSACTION_REPLACED' && err.replacement && err.receipt.status === 1) {
-            console.log('  Mint finalized (tx replaced but succeeded)');
-        } else {
-            throw err;
+        try {
+            const finalizeTx = await hub.finalizeMint(requestId, secret, { gasLimit: 1000000 });
+            await finalizeTx.wait();
+            console.log('  Mint finalized:', finalizeTx.hash);
+        } catch (err) {
+            if (err.code === 'TRANSACTION_REPLACED' && err.replacement && err.receipt.status === 1) {
+                console.log('  Mint finalized (tx replaced but succeeded)');
+            } else {
+                throw err;
+            }
         }
-    }
 
-    const wsxmrBalance = await wsxmr.balanceOf(wallet.address);
-    console.log('  wsXMR balance after mint:', ethers.utils.formatUnits(wsxmrBalance, 8));
+        wsxmrBalance = await wsxmr.balanceOf(wallet.address);
+        console.log('  wsXMR balance after mint:', ethers.utils.formatUnits(wsxmrBalance, 8));
+    } else {
+        console.log('Skipping mint — already have', ethers.utils.formatUnits(wsxmrBalance, 8), 'wsXMR');
+    }
 
     // Step 3: Co-LP half of minted wsXMR
     const wsxmrToDeposit = wsxmrBalance.div(2);
@@ -153,17 +187,17 @@ async function main() {
         process.exit(1);
     }
 
-    const approveTx = await wsxmr.approve(HUB_ADDRESS, wsxmrToDeposit, { maxPriorityFeePerGas: ethers.utils.parseUnits('10', 'gwei'), maxFeePerGas: ethers.utils.parseUnits('20', 'gwei') });
+    const approveTx = await wsxmr.approve(HUB_ADDRESS, wsxmrToDeposit);
     await approveTx.wait();
 
-    const preCoLPTx = await wrappedHub.updateOraclePrices([], { gasLimit: 500000 });
-    await preCoLPTx.wait();
-    console.log('  Prices pushed');
-
     const deadline = Math.floor(Date.now() / 1000) + 3600;
-    const coLPTx = await hub.userOpenCoLP(wallet.address, wsxmrToDeposit, deadline, { gasLimit: 2000000, maxPriorityFeePerGas: ethers.utils.parseUnits('10', 'gwei'), maxFeePerGas: ethers.utils.parseUnits('20', 'gwei') });
-    const coLPReceipt = await coLPTx.wait();
-    console.log('  Co-LP TX:', coLPTx.hash);
+
+    // Push prices and immediately send CoLP so both mine in rapid succession (avoid StalePrice)
+    const preCoLPTx = await hub.updateOraclePrices([fetchReport(XMR_FEED), fetchReport(ETH_FEED)], { gasLimit: 500000 });
+    const coLPTx = await hub.userOpenCoLP(wallet.address, wsxmrToDeposit, deadline, { gasLimit: 2000000 });
+    console.log('  Co-LP sent:', coLPTx.hash);
+    const [preReceipt, coLPReceipt] = await Promise.all([preCoLPTx.wait(), coLPTx.wait()]);
+    console.log('  Prices pushed:', preReceipt.transactionHash);
 
     let tokenId = null;
     if (coLPReceipt.events) {
@@ -183,7 +217,7 @@ async function main() {
     }
 
     console.log('  Token ID:', tokenId ? ethers.BigNumber.from(tokenId).toString() : 'unknown');
-    console.log('  View on Gnosisscan: https://gnosisscan.io/tx/' + coLPTx.hash);
+    console.log('  View on Basescan: https://sepolia.basescan.org/tx/' + coLPTx.hash);
 
     const finalBalance = await wsxmr.balanceOf(wallet.address);
     console.log('  Final wsXMR balance (should be ~half):', ethers.utils.formatUnits(finalBalance, 8));
@@ -192,8 +226,8 @@ async function main() {
     console.log('');
     console.log('=== Vault Withdrawal Test (after Co-LP) ===');
 
-    const hasVault = await hub.hasActiveVault(wallet.address);
-    if (!hasVault) {
+    const hasVaultAfter = await hub.hasActiveVault(wallet.address);
+    if (!hasVaultAfter) {
         console.log('  No vault found, skipping withdrawal test');
     } else {
         const vaultBefore = await hub.getVault(wallet.address);
@@ -204,22 +238,15 @@ async function main() {
         console.log('  Deployed sDAI:     ', vaultBefore.deployedSDAIShares.toString());
         console.log('');
 
-        // Update prices before withdrawal
-        const preWithdrawPriceTx = await wrappedHub.updateOraclePrices([], { gasLimit: 500000 });
-        await preWithdrawPriceTx.wait();
-        console.log('  Prices updated for withdrawal');
-
-        // Try a very small withdrawal (1 share) to test the path
+        // Update prices and immediately send withdrawal to avoid StalePrice
         const testWithdrawAmount = ethers.BigNumber.from('1');
         console.log('  Attempting small withdrawal of', testWithdrawAmount.toString(), 'share(s)...');
 
         try {
-            const withdrawTx = await hub.withdrawCollateral(testWithdrawAmount, {
-                gasLimit: 500000,
-                maxPriorityFeePerGas: ethers.utils.parseUnits('10', 'gwei'),
-                maxFeePerGas: ethers.utils.parseUnits('20', 'gwei')
-            });
-            await withdrawTx.wait();
+            const preWithdrawPriceTx = await hub.updateOraclePrices([fetchReport(XMR_FEED), fetchReport(ETH_FEED)], { gasLimit: 500000 });
+            const withdrawTx = await hub.withdrawCollateral(testWithdrawAmount, { gasLimit: 500000 });
+            console.log('  Withdrawal sent:', withdrawTx.hash);
+            await Promise.all([preWithdrawPriceTx.wait(), withdrawTx.wait()]);
             console.log('  ✅ Withdrawal succeeded! TX:', withdrawTx.hash);
         } catch (err) {
             const reason = (err.reason || err.message || '').toLowerCase();

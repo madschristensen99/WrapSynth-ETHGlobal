@@ -14,7 +14,7 @@ import {wsXMR} from "../contracts/wsXMR.sol";
 import {wsXMRLiquidityRouter} from "../contracts/router/wsXMRLiquidityRouter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ed25519} from "../contracts/Ed25519.sol";
-import {GnosisAddresses} from "../contracts/GnosisAddresses.sol";
+import {BaseSepoliaAddresses} from "../contracts/BaseSepoliaAddresses.sol";
 import {IUniswapV3Factory} from "../contracts/interfaces/external/IUniswapV3Factory.sol";
 import {INonfungiblePositionManager} from "../contracts/interfaces/external/INonfungiblePositionManager.sol";
 
@@ -33,6 +33,10 @@ import {INonfungiblePositionManager} from "../contracts/interfaces/external/INon
  */
 contract E2EFullCycleTest is Test {
     // Gnosis addresses
+    address constant WETH = BaseSepoliaAddresses.WETH;
+    
+    address constant UNISWAP_V3_FACTORY = BaseSepoliaAddresses.UNI_V3_FACTORY;
+    address constant UNISWAP_V3_POSITION_MANAGER = BaseSepoliaAddresses.UNI_V3_POSITION_MANAGER;
     
     // Contracts
     wsXmrHub public hub;
@@ -63,7 +67,7 @@ contract E2EFullCycleTest is Test {
     
     function setUp() public {
         // Fork Gnosis
-        string memory rpcUrl = vm.envOr("GNOSIS_RPC_URL", string("https://rpc.gnosischain.com"));
+        string memory rpcUrl = vm.envOr("GNOSIS_RPC_URL", string("https://sepolia.base.org"));
         vm.createSelectFork(rpcUrl);
         
         deployer = address(this);
@@ -88,16 +92,16 @@ contract E2EFullCycleTest is Test {
         console.log("wsXMR Token:", address(wsxmr));
         
         // Deploy hub
-        hub = new wsXmrHub(address(wsxmr), address(verifier));
+        hub = new wsXmrHub(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH);
         console.log("wsXmrHub:", address(hub));
         
         // Deploy facets
-        oracleFacet = new SimpleOracleFacet(address(wsxmr), address(verifier), deployer);
-        vaultFacet = new VaultFacet(address(wsxmr), address(verifier));
-        mintFacet = new MintFacet(address(wsxmr), address(verifier));
-        burnFacet = new BurnFacet(address(wsxmr), address(verifier));
-        liquidationFacet = new LiquidationFacet(address(wsxmr), address(verifier));
-        yieldFacet = new YieldFacet(address(wsxmr), address(verifier));
+        oracleFacet = new SimpleOracleFacet(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH, deployer);
+        vaultFacet = new VaultFacet(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH);
+        mintFacet = new MintFacet(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH);
+        burnFacet = new BurnFacet(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH);
+        liquidationFacet = new LiquidationFacet(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH);
+        yieldFacet = new YieldFacet(address(wsxmr), address(verifier), BaseSepoliaAddresses.WETH);
         
         console.log("SimpleOracleFacet:", address(oracleFacet));
         console.log("VaultFacet:", address(vaultFacet));
@@ -118,31 +122,30 @@ contract E2EFullCycleTest is Test {
         
         // Set hub as wsXMR controller
         wsxmr.setHub(address(hub));
-
-        // Fund MockSavingsDAI wrapper with WETH so redeem() works
-        deal(GnosisAddresses.XDAI, GnosisAddresses.SDAI, 100000 ether);
         
-        // Create Uniswap V3 pool for co-LP (if not exists)
-        address pool = IUniswapV3Factory(GnosisAddresses.UNI_V3_FACTORY).getPool(GnosisAddresses.SDAI, address(wsxmr), 3000);
-        if (pool == address(0)) {
-            pool = IUniswapV3Factory(GnosisAddresses.UNI_V3_FACTORY).createPool(GnosisAddresses.SDAI, address(wsxmr), 3000);
-            console.log("Created Uniswap V3 Pool:", pool);
-        } else {
-            console.log("Using existing pool:", pool);
+        // Create Uniswap V3 pool for co-LP (if factory is deployed on this chain)
+        if (UNISWAP_V3_FACTORY != address(0)) {
+            address pool = IUniswapV3Factory(UNISWAP_V3_FACTORY).getPool(WETH, address(wsxmr), 3000);
+            if (pool == address(0)) {
+                pool = IUniswapV3Factory(UNISWAP_V3_FACTORY).createPool(WETH, address(wsxmr), 3000);
+                console.log("Created Uniswap V3 Pool:", pool);
+            } else {
+                console.log("Using existing pool:", pool);
+            }
+            
+            // Deploy router
+            router = new wsXMRLiquidityRouter(
+                address(hub),
+                UNISWAP_V3_POSITION_MANAGER,
+                WETH,
+                address(wsxmr),
+                pool
+            );
+            console.log("wsXMRLiquidityRouter:", address(router));
+            
+            // Set router in hub
+            hub.setLiquidityRouter(address(router));
         }
-        
-        // Deploy router
-        router = new wsXMRLiquidityRouter(
-            address(hub),
-            GnosisAddresses.UNI_V3_POSITION_MANAGER,
-            GnosisAddresses.SDAI,
-            address(wsxmr),
-            pool
-        );
-        console.log("wsXMRLiquidityRouter:", address(router));
-        
-        // Set router in hub
-        hub.setLiquidityRouter(address(router));
     }
     
     function test_FullEndToEndCycle() public {
@@ -198,21 +201,20 @@ contract E2EFullCycleTest is Test {
         
         vm.startPrank(lp);
         
-        // Get xDAI by wrapping native
-        deal(GnosisAddresses.SDAI, lp, 100 ether);
-        // dealt GnosisAddresses.SDAI directly
+        // Get WETH collateral
+        deal(WETH, lp, 100 ether);
         
-        uint256 xdaiBalance = IERC20(GnosisAddresses.XDAI).balanceOf(lp);
-        console.log("LP xDAI balance:", xdaiBalance / 1e18, "xDAI");
+        uint256 wethBalance = IERC20(WETH).balanceOf(lp);
+        console.log("LP WETH balance:", wethBalance / 1e18, "WETH");
         
         // Create vault
         VaultFacet(address(hub)).createVault();
         console.log("[OK] Vault created");
         
-        // Deposit collateral (xDAI will be converted to sDAI)
-        IERC20(GnosisAddresses.SDAI).approve(address(hub), 100 ether);
-        VaultFacet(address(hub)).depositShares(100 ether);
-        console.log("[OK] Deposited 100 xDAI as collateral");
+        // Deposit collateral (WETH will be converted to WETH)
+        IERC20(WETH).approve(address(hub), 100 ether);
+        VaultFacet(address(hub)).depositCollateral(100 ether);
+        console.log("[OK] Deposited 100 WETH as collateral");
         
         vm.stopPrank();
         console.log();
@@ -347,22 +349,18 @@ contract E2EFullCycleTest is Test {
         uint256 withdrawAmount = 5 ether;
         console.log("Withdrawing:", withdrawAmount, "shares");
         
-        // Check both xDAI and sDAI balances (contract may return either)
-        uint256 xdaiBalanceBefore = IERC20(GnosisAddresses.XDAI).balanceOf(lp);
-        uint256 sdaiBalanceBefore = IERC20(GnosisAddresses.SDAI).balanceOf(lp);
+        // Check WETH balance
+        uint256 wethBalanceBefore = IERC20(WETH).balanceOf(lp);
         
         VaultFacet(address(hub)).withdrawCollateral(withdrawAmount);
         
-        uint256 xdaiBalanceAfter = IERC20(GnosisAddresses.XDAI).balanceOf(lp);
-        uint256 sdaiBalanceAfter = IERC20(GnosisAddresses.SDAI).balanceOf(lp);
+        uint256 wethBalanceAfter = IERC20(WETH).balanceOf(lp);
         
-        uint256 xdaiReceived = xdaiBalanceAfter - xdaiBalanceBefore;
-        uint256 sdaiReceived = sdaiBalanceAfter - sdaiBalanceBefore;
+        uint256 wethReceived = wethBalanceAfter - wethBalanceBefore;
         
         console.log("[OK] Withdrawal successful!");
-        console.log("  Received xDAI:", xdaiReceived);
-        console.log("  Received sDAI:", sdaiReceived);
-        assertTrue(xdaiReceived > 0 || sdaiReceived > 0, "Should have received tokens");
+        console.log("  Received WETH:", wethReceived);
+        assertTrue(wethReceived > 0, "Should have received WETH tokens");
         console.log();
         
         vm.stopPrank();
@@ -377,7 +375,7 @@ contract E2EFullCycleTest is Test {
         
         // In a full implementation, LP would allocate collateral
         // and user would allocate wsXMR to create a Uniswap V3 position
-        console.log("LP would allocate sDAI shares");
+        console.log("LP would allocate WETH shares");
         console.log("User would allocate wsXMR");
         
         // Note: Full co-LP requires pool initialization and liquidity deployment
@@ -415,15 +413,15 @@ contract E2EFullCycleTest is Test {
             console.log("[OK] Collected native fees:", balanceAfter - balanceBefore);
         }
         
-        // Check sDAI returns
-        uint256 sdaiReturns = VaultFacet(address(hub)).pendingReturns(lp, GnosisAddresses.SDAI);
-        console.log("LP pending sDAI returns:", sdaiReturns);
+        // Check WETH returns
+        uint256 wethReturns = VaultFacet(address(hub)).pendingReturns(lp, WETH);
+        console.log("LP pending WETH returns:", wethReturns);
         
-        if (sdaiReturns > 0) {
-            uint256 balanceBefore = IERC20(GnosisAddresses.SDAI).balanceOf(lp);
-            VaultFacet(address(hub)).withdrawReturns(GnosisAddresses.SDAI);
-            uint256 balanceAfter = IERC20(GnosisAddresses.SDAI).balanceOf(lp);
-            console.log("[OK] Collected sDAI fees:", balanceAfter - balanceBefore);
+        if (wethReturns > 0) {
+            uint256 balanceBefore = IERC20(WETH).balanceOf(lp);
+            VaultFacet(address(hub)).withdrawReturns(WETH);
+            uint256 balanceAfter = IERC20(WETH).balanceOf(lp);
+            console.log("[OK] Collected WETH fees:", balanceAfter - balanceBefore);
         }
         
         vm.stopPrank();

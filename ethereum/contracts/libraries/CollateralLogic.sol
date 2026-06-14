@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "./CollateralHelpers.sol";
+
 /**
  * @title CollateralLogic
  * @notice Library for collateral ratio calculations
@@ -52,25 +54,19 @@ library CollateralLogic {
     }
     
     /**
-     * @notice Calculate collateral ratio from sDAI shares
+     * @notice Calculate collateral ratio from collateral shares
      * @dev Converts shares to assets, then calculates USD values and ratio
      */
     function calculateRatioFromShares(
         uint256 collateralShares,
         uint256 debtAmount,
-        address sdai,
+        address collateralToken,
         uint256 collateralPrice,
         uint256 xmrPrice
     ) internal view returns (uint256) {
         if (debtAmount == 0) return type(uint256).max;
         
-        // Convert sDAI shares to underlying DAI amount
-        // Using low-level call to avoid importing IERC4626
-        (bool success, bytes memory data) = sdai.staticcall(
-            abi.encodeWithSignature("convertToAssets(uint256)", collateralShares)
-        );
-        require(success && data.length >= 32, "convertToAssets failed");
-        uint256 collateralAmount = abi.decode(data, (uint256));
+        uint256 collateralAmount = CollateralHelpers.toAssets(collateralToken, collateralShares);
         
         uint256 collateralValueUsd = (collateralAmount * collateralPrice) / 1e18;
         uint256 debtValueUsd = (debtAmount * xmrPrice) / 1e8; // wsXMR has 8 decimals
@@ -79,35 +75,31 @@ library CollateralLogic {
     }
     
     /**
-     * @notice Calculate CR including idle sDAI shares AND deployed pool positions.
-     * @dev Position contents (positionDAI, positionWsxmr) MUST be valued at oracle prices
+     * @notice Calculate CR including idle collateral shares AND deployed pool positions.
+     * @dev Position contents (positionCollateral, positionWsxmr) MUST be valued at oracle prices
      *      by the caller. This function trusts those inputs.
-     * @param idleShares sDAI shares held directly by vault
-     * @param positionDAI Sum of DAI (1e18) across vault's active positions
+     * @param idleShares Collateral shares held directly by vault
+     * @param positionCollateral Sum of collateral (1e18) across vault's active positions
      * @param debtAmount wsXMR debt
-     * @param sdai sDAI token address
-     * @param collateralPrice sDAI USD price (1e18)
+     * @param collateralToken Collateral token address
+     * @param collateralPrice Collateral USD price (1e18)
      * @param xmrPrice XMR USD price (1e18)
      */
     function calculateVaultCRWithDeployment(
         uint256 idleShares,
-        uint256 positionDAI,
+        uint256 positionCollateral,
         uint256 /*positionWsxmr*/,
         uint256 debtAmount,
-        address sdai,
+        address collateralToken,
         uint256 collateralPrice,
         uint256 xmrPrice
     ) internal view returns (uint256) {
         if (debtAmount == 0) return type(uint256).max;
         
-        (bool success, bytes memory data) = sdai.staticcall(
-            abi.encodeWithSignature("convertToAssets(uint256)", idleShares)
-        );
-        require(success && data.length >= 32, "convertToAssets failed");
-        uint256 idleDaiAmount = abi.decode(data, (uint256));
+        uint256 idleAssetAmount = CollateralHelpers.toAssets(collateralToken, idleShares);
         
-        uint256 totalDaiAmount = idleDaiAmount + positionDAI;
-        uint256 collateralUsd = (totalDaiAmount * collateralPrice) / 1e18;
+        uint256 totalAssetAmount = idleAssetAmount + positionCollateral;
+        uint256 collateralUsd = (totalAssetAmount * collateralPrice) / 1e18;
         // M2: Do NOT count deployed wsXMR as vault collateral. On unwind it goes
         // to the user (pendingReturns), not the vault.
         uint256 debtValueUsd = (debtAmount * xmrPrice) / 1e8;

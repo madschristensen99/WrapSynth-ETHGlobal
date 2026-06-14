@@ -60,16 +60,16 @@ contract E2EChainlinkOracleTest is Test {
 
         verifier = new MockVerifierProxy();
         wsxmr = new wsXMR();
-        hub = new wsXmrHub(address(wsxmr), address(verifier));
+        hub = new wsXmrHub(address(wsxmr), address(verifier), GnosisAddresses.XDAI);
 
         oracleFacet = new ChainlinkDataStreamsOracleFacet(
-            address(wsxmr), address(verifier), XMR_FEED_ID, ETH_FEED_ID
+            address(wsxmr), address(verifier), GnosisAddresses.XDAI, XMR_FEED_ID, ETH_FEED_ID
         );
-        VaultFacet vaultFacet = new VaultFacet(address(wsxmr), address(verifier));
-        MintFacet mintFacet = new MintFacet(address(wsxmr), address(verifier));
-        BurnFacet burnFacet = new BurnFacet(address(wsxmr), address(verifier));
-        LiquidationFacet liquidationFacet = new LiquidationFacet(address(wsxmr), address(verifier));
-        YieldFacet yieldFacet = new YieldFacet(address(wsxmr), address(verifier));
+        VaultFacet vaultFacet = new VaultFacet(address(wsxmr), address(verifier), GnosisAddresses.XDAI);
+        MintFacet mintFacet = new MintFacet(address(wsxmr), address(verifier), GnosisAddresses.XDAI);
+        BurnFacet burnFacet = new BurnFacet(address(wsxmr), address(verifier), GnosisAddresses.XDAI);
+        LiquidationFacet liquidationFacet = new LiquidationFacet(address(wsxmr), address(verifier), GnosisAddresses.XDAI);
+        YieldFacet yieldFacet = new YieldFacet(address(wsxmr), address(verifier), GnosisAddresses.XDAI);
 
         hub.registerFacets(
             address(vaultFacet),

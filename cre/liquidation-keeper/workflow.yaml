@@ -1,0 +1,19 @@
+# ==========================================================================
+# Workflow configuration for the WrapSynth Autonomous Liquidation Keeper.
+# Maps each CLI target to its config file + artifact paths.
+# ==========================================================================
+staging-settings:
+  user-workflow:
+    workflow-name: "wrapsynth-liquidation-keeper-staging"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.staging.json"
+    secrets-path: ""
+
+production-settings:
+  user-workflow:
+    workflow-name: "wrapsynth-liquidation-keeper-production"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.production.json"
+    secrets-path: ""

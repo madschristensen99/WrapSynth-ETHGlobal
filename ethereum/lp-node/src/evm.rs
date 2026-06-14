@@ -240,7 +240,7 @@ pub struct EvmClient {
     wallet: EthereumWallet,
     vault_manager: Address,
     lp_vault_address: Address,
-    pyth_endpoint: String,
+    pyth_endpoint: Option<String>,
     rpc_url: String,
     nonce: Arc<RwLock<Option<u64>>>,
 }
@@ -253,7 +253,7 @@ impl EvmClient {
         private_key: String,
         vault_manager: Address,
         lp_vault_address: Address,
-        pyth_endpoint: String,
+        pyth_endpoint: Option<String>,
     ) -> Result<Self> {
         // Parse the private key
         let signer: PrivateKeySigner = private_key
@@ -319,11 +319,19 @@ impl EvmClient {
     async fn fetch_pyth_update(&self) -> Result<Vec<Bytes>> {
         // Fetch price update data from Pyth Hermes API
         // This is required before any transaction that checks prices
-        
+
+        let pyth_endpoint = match &self.pyth_endpoint {
+            Some(ep) => ep,
+            None => {
+                debug!("No Pyth endpoint configured, skipping price update");
+                return Ok(Vec::new());
+            }
+        };
+
         let client = reqwest::Client::new();
         let url = format!(
             "{}/latest_price_feeds?ids[]=0x46b8cc9347f04391764a0361e0b17c3ba394b001e7c304f7650f6376e37c321d&ids[]=0x31491744e2dbf6df7fcf4ac0820d18a609b49076d45066d3568424e62f686cd1",
-            self.pyth_endpoint
+            pyth_endpoint
         );
 
         let response = client

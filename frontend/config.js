@@ -66,6 +66,30 @@ export const NETWORKS = {
             },
         },
     },
+    BASE_SEPOLIA: {
+        id: 84532,
+        name: 'Base Sepolia',
+        network: 'base-sepolia',
+        nativeCurrency: {
+            decimals: 18,
+            name: 'Ether',
+            symbol: 'ETH',
+        },
+        rpcUrls: {
+            default: {
+                http: ['https://sepolia.base.org', 'https://base-sepolia-rpc.publicnode.com'],
+            },
+            public: {
+                http: ['https://sepolia.base.org', 'https://base-sepolia-rpc.publicnode.com'],
+            },
+        },
+        blockExplorers: {
+            default: {
+                name: 'Basescan',
+                url: 'https://sepolia.basescan.org',
+            },
+        },
+    },
 };
 
 // Contract deployments per network
@@ -96,10 +120,28 @@ export const DEPLOYMENTS = {
         initialMoneroBlock: 3605079,
         deployedAt: null,
     },
+    BASE_SEPOLIA: {
+        chainId: 84532,
+        wrappedMonero: DC.wsXMR || '0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b',
+        wsXmrHub: DC.wsXmrHub || '0x0454983E17b803a2C6ff0d98d5D58676525F4A92',
+        oracleFacet: DF.ChainlinkDataStreamsOracleFacet || '0xe38af534e73995a0bfac54e40ed82bc2ffddd22d',
+        vaultFacet: DF.VaultFacet || '0xeb2435f32deda1da7cbbcd95fc3c230b0b9fcd92',
+        mintFacet: DF.MintFacet || '0x09109e9f0c9b2affbdef61a541b6a5e3f70069a9',
+        burnFacet: DF.BurnFacet || '0xc957665b81b16934bf2df813c714fabf8a5878ae',
+        liquidationFacet: DF.LiquidationFacet || '0x42d2cc6db9b495d85922e95d90815f2244567c56',
+        yieldFacet: DF.YieldFacet || '0x2ed9cc036bba0d976847367a378e6d8e0d3ca19a',
+        liquidityRouter: DC.liquidityRouter || '0x0F9172c037eC5dFFa940aFa357Ee0A52B5a08d71',
+        sDAI: DE.sDAI || '0x57cA07e0443c7Dc720CAd8AF63D8a6bBeDabD202',
+        chainlinkVerifierProxy: DE.chainlinkVerifierProxy || '0x8Ac491b7c118a0cdcF048e0f707247fD8C9575f9',
+        linkToken: DE.linkToken || '0xE4aB69C077896252FAFBD49EFD26B5D171A32410',
+        ed25519Helper: DE.Ed25519Helper || '0x8D7DD0A1FD26A2602837B028afB7A1f1b21DA9E7',
+        initialMoneroBlock: 3607954,
+        deployedAt: D.deploymentDate || '2026-06-13T06:28:00Z',
+    },
 };
 
-// Default network (Gnosis mainnet)
-export const DEFAULT_NETWORK = 'GNOSIS';
+// Default network (Base Sepolia testnet)
+export const DEFAULT_NETWORK = 'BASE_SEPOLIA';
 
 // Get configuration for a specific network
 export function getNetworkConfig(networkKey = DEFAULT_NETWORK) {

@@ -5,6 +5,11 @@ import { CONTRACTS, ABIS, DECIMALS } from './config.js';
 import { readHub, writeHub, readWsxmr, writeWsxmr, getUserAddress, getPublicClient, getWalletClient } from './viemClient.js';
 import { formatUnits, parseUnits, parseAbi } from 'https://esm.sh/viem@2.7.0';
 
+function isStalePriceError(err) {
+    const msg = (err && err.message) || '';
+    return msg.includes('StalePrice') || msg.includes('0x19abf40e');
+}
+
 export class CoLPFlow {
     constructor() {
         this.userAddress = null;
@@ -19,18 +24,44 @@ export class CoLPFlow {
     }
 
     /**
+     * Read from hub, auto-refreshing oracle prices once on StalePrice.
+     */
+    async readWithPriceRefresh(fn, args) {
+        try {
+            return await readHub(fn, args);
+        } catch (err) {
+            if (!isStalePriceError(err)) throw err;
+            console.warn(`[CoLP] StalePrice on ${fn}, updating oracle prices...`);
+            await this.updatePrices();
+            return await readHub(fn, args);
+        }
+    }
+
+    /**
      * @notice Get the maximum wsXMR a vault can accept for co-LP
      * @param {string} lpVault - LP vault address
      * @returns {Promise<bigint>} maxWsxmrAcceptable
      */
     async getCoLPCapacity(lpVault) {
         const publicClient = getPublicClient();
-        return await publicClient.readContract({
-            address: CONTRACTS.hub,
-            abi: parseAbi(ABIS.hub),
-            functionName: 'getCoLPCapacity',
-            args: [lpVault]
-        });
+        try {
+            return await publicClient.readContract({
+                address: CONTRACTS.hub,
+                abi: parseAbi(ABIS.hub),
+                functionName: 'getCoLPCapacity',
+                args: [lpVault]
+            });
+        } catch (err) {
+            if (!isStalePriceError(err)) throw err;
+            console.warn('[CoLP] StalePrice on getCoLPCapacity, updating oracle prices...');
+            await this.updatePrices();
+            return await publicClient.readContract({
+                address: CONTRACTS.hub,
+                abi: parseAbi(ABIS.hub),
+                functionName: 'getCoLPCapacity',
+                args: [lpVault]
+            });
+        }
     }
 
     /**
@@ -67,6 +98,13 @@ export class CoLPFlow {
         const currentAllowance = await this.getWsxmrAllowance();
         if (currentAllowance < amount) {
             await writeWsxmr('approve', [CONTRACTS.hub, amount]);
+            // Poll for RPC state to catch up — public HTTP RPCs can lag behind wallet broadcast
+            let retries = 10;
+            while (retries-- > 0) {
+                const newAllowance = await this.getWsxmrAllowance();
+                if (newAllowance >= amount) break;
+                await new Promise(r => setTimeout(r, 500));
+            }
         }
 
         // userOpenCoLP mints a UniV3 NFT — needs high gas limit
@@ -155,10 +193,10 @@ export class CoLPFlow {
             data.lockedCollateral = vault.lockedCollateral?.toString?.() ?? vault.lockedCollateral;
             data.maxCoLPRangeBps = vault.maxCoLPRangeBps ?? vault[13]; // tuple index fallback
 
-            // 2. Oracle prices (best-effort: view reads through diamond fallback often revert)
+            // 2. Oracle prices (auto-update on StalePrice)
             try {
-                const xmrPrice = await readHub('getXmrPrice');
-                const collPrice = await readHub('getCollateralPrice');
+                const xmrPrice = await this.readWithPriceRefresh('getXmrPrice');
+                const collPrice = await this.readWithPriceRefresh('getCollateralPrice');
                 data.xmrPrice = xmrPrice.toString();
                 data.collPrice = collPrice.toString();
                 if (xmrPrice === 0n) warnings.push('XMR oracle price is 0 (likely stale)');
@@ -260,15 +298,67 @@ export class CoLPFlow {
      * @notice Query user's active Co-LP positions from chain events
      * @returns {Promise<Array<{tokenId: string, vault: string, wsxmrAmount: string, rangeBps: number}>>}
      */
+    async _getChunkedEvents(publicClient, address, abi, eventName, args, fromBlock, toBlock, chunkSize = 2000n) {
+        const allEvents = [];
+        const logPrefix = `[CoLPChunkedEvents ${eventName}]`;
+        for (let start = fromBlock; start <= toBlock; start += chunkSize) {
+            const end = start + chunkSize - 1n > toBlock ? toBlock : start + chunkSize - 1n;
+            try {
+                const chunk = await publicClient.getContractEvents({
+                    address,
+                    abi,
+                    eventName,
+                    args,
+                    fromBlock: start,
+                    toBlock: end
+                });
+                allEvents.push(...chunk);
+            } catch (err) {
+                const msg = err.message || '';
+                const isRateLimit = /429|rate limit|too many/i.test(msg);
+                if (isRateLimit) {
+                    console.warn(`${logPrefix} rate limited on chunk ${start}-${end}, backing off 2s...`);
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+                console.warn(`${logPrefix} chunk ${start}-${end} failed with ${chunkSize} blocks:`, msg || err);
+                // Retry with smaller 500-block chunks
+                if (chunkSize > 500n) {
+                    console.log(`${logPrefix} retrying ${start}-${end} with 500-block chunks...`);
+                    try {
+                        const retryEvents = await this._getChunkedEvents(publicClient, address, abi, eventName, args, start, end, 500n);
+                        allEvents.push(...retryEvents);
+                    } catch (retryErr) {
+                        console.warn(`${logPrefix} retry ${start}-${end} also failed:`, retryErr.message || retryErr);
+                    }
+                } else {
+                    // Already at smallest chunk; skip this range
+                    console.warn(`${logPrefix} skipping block range ${start}-${end}`);
+                }
+            }
+            // Throttle: small delay between chunks to avoid RPC rate limits
+            await new Promise(r => setTimeout(r, 300));
+        }
+        console.log(`${logPrefix} total events collected:`, allEvents.length);
+        return allEvents;
+    }
+
     async getUserActivePositions() {
         if (!this.userAddress) return [];
+        console.log('[CoLP] getUserActivePositions v2 — using chunked event scan (2000-block chunks with 500-block fallback)');
 
         const publicClient = getPublicClient();
-        const currentBlock = await publicClient.getBlockNumber();
-        // Scan last ~2.75 days max (48,000 blocks) to stay within RPC provider limits
+        let currentBlock;
+        try {
+            currentBlock = await publicClient.getBlockNumber();
+        } catch (err) {
+            console.error('[CoLP] getBlockNumber failed:', err.message || err);
+            throw new Error(`Cannot get current block: ${err.message}`);
+        }
+
+        // Scan last ~2.75 days max (48,000 blocks)
         const MAX_SCAN_BLOCKS = 48000n;
         const fromBlock = currentBlock > MAX_SCAN_BLOCKS ? currentBlock - MAX_SCAN_BLOCKS : 0n;
-        const safeFromBlock = fromBlock;
+        console.log(`[CoLP] scanning blocks ${fromBlock} to ${currentBlock} for user ${this.userAddress}`);
 
         const hubAbi = parseAbi([
             'event CoLPDeployed(address indexed vault, address indexed user, uint256 indexed tokenId, uint256 sDAIShares, uint256 wsxmrAmount, uint16 rangeBps)',
@@ -276,36 +366,24 @@ export class CoLPFlow {
             'event CoLPRebalanced(uint256 indexed oldTokenId, uint256 indexed newTokenId, address indexed vault, address user, address caller, uint16 newRangeBps)'
         ]);
 
-        // Query CoLPDeployed events for this user
-        const deployedEvents = await publicClient.getContractEvents({
-            address: CONTRACTS.hub,
-            abi: hubAbi,
-            eventName: 'CoLPDeployed',
-            args: { user: this.userAddress },
-            fromBlock: safeFromBlock,
-            toBlock: 'latest'
-        });
+        // Query events in small chunks to avoid RPC block-range limits
+        const chunkSize = 2000n;
+        const deployedEvents = await this._getChunkedEvents(
+            publicClient, CONTRACTS.hub, hubAbi, 'CoLPDeployed',
+            { user: this.userAddress }, fromBlock, currentBlock, chunkSize
+        );
 
-        // Query CoLPUnwound events for this user
-        const unwoundEvents = await publicClient.getContractEvents({
-            address: CONTRACTS.hub,
-            abi: hubAbi,
-            eventName: 'CoLPUnwound',
-            args: { user: this.userAddress },
-            fromBlock: safeFromBlock,
-            toBlock: 'latest'
-        });
+        const unwoundEvents = await this._getChunkedEvents(
+            publicClient, CONTRACTS.hub, hubAbi, 'CoLPUnwound',
+            { user: this.userAddress }, fromBlock, currentBlock, chunkSize
+        );
 
         // Track rebalanced tokenIds: oldTokenId -> newTokenId
         const rebalanceMap = new Map(); // oldTokenId -> newTokenId
-        const rebalanceEvents = await publicClient.getContractEvents({
-            address: CONTRACTS.hub,
-            abi: hubAbi,
-            eventName: 'CoLPRebalanced',
-            args: { user: this.userAddress },
-            fromBlock: safeFromBlock,
-            toBlock: 'latest'
-        });
+        const rebalanceEvents = await this._getChunkedEvents(
+            publicClient, CONTRACTS.hub, hubAbi, 'CoLPRebalanced',
+            { user: this.userAddress }, fromBlock, currentBlock, chunkSize
+        );
         for (const ev of rebalanceEvents) {
             rebalanceMap.set(ev.args.oldTokenId.toString(), ev.args.newTokenId.toString());
         }

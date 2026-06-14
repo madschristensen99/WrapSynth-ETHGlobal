@@ -2,7 +2,7 @@
 // Uses createPublicClient and createWalletClient as required
 
 import { createPublicClient, createWalletClient, custom, http, fallback, parseAbi } from 'https://esm.sh/viem@2.7.0';
-import { gnosis } from 'https://esm.sh/viem@2.7.0/chains';
+import { baseSepolia } from 'https://esm.sh/viem@2.7.0/chains';
 import { NETWORKS, CONTRACTS, ABIS, RAW_ABIS } from './config.js';
 
 // Parse ABIs once at module level
@@ -25,23 +25,19 @@ let userAddress = null;
  * Initialize viem clients
  */
 function getTransport() {
-    // If MetaMask is available, use it for reads — bypasses CORS and rate limits entirely
-    if (typeof window !== 'undefined' && window.ethereum) {
-        try {
-            return custom(window.ethereum);
-        } catch (e) {
-            console.warn('[viemClient] MetaMask transport unavailable, falling back to HTTP');
-        }
-    }
-    // Fallback to HTTP RPCs for users without a wallet
-    const transports = NETWORKS.gnosis.rpcUrls.map(url => http(url));
+    // Always use HTTP RPCs for public reads so they always hit Base Sepolia,
+    // regardless of which chain the user's wallet happens to be on.
+    // Wallet provider is still used for walletClient (writes).
+    const transports = NETWORKS.baseSepolia.rpcUrls.map(url =>
+        http(url, { retryCount: 3, retryDelay: 1500, timeout: 15000 })
+    );
     return fallback(transports, { rank: false });
 }
 
 export async function initializeClients() {
     // Create public client with hybrid transport (MetaMask > HTTP fallback)
     publicClient = createPublicClient({
-        chain: gnosis,
+        chain: baseSepolia,
         transport: getTransport()
     });
 
@@ -52,7 +48,7 @@ export async function initializeClients() {
 
     // Create wallet client using MetaMask
     walletClient = createWalletClient({
-        chain: gnosis,
+        chain: baseSepolia,
         transport: custom(window.ethereum)
     });
 
@@ -74,24 +70,24 @@ export async function connectWallet() {
     // Recreate wallet client with the account so writeContract works reliably
     walletClient = createWalletClient({
         account: address,
-        chain: gnosis,
+        chain: baseSepolia,
         transport: custom(window.ethereum)
     });
 
     // Ensure we're on the correct network
-    await switchToGnosisChain();
+    await switchToBaseSepolia();
 
     return address;
 }
 
 /**
- * Switch to Gnosis Chain if not already connected
+ * Switch to Base Sepolia if not already connected
  */
-async function switchToGnosisChain() {
+async function switchToBaseSepolia() {
     try {
         await window.ethereum.request({
             method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0x64' }], // 100 in hex
+            params: [{ chainId: '0x14a34' }], // 84532 in hex
         });
     } catch (switchError) {
         // Chain not added, add it
@@ -99,11 +95,11 @@ async function switchToGnosisChain() {
             await window.ethereum.request({
                 method: 'wallet_addEthereumChain',
                 params: [{
-                    chainId: '0x64',
-                    chainName: NETWORKS.gnosis.name,
-                    nativeCurrency: NETWORKS.gnosis.nativeCurrency,
-                    rpcUrls: NETWORKS.gnosis.rpcUrls,
-                    blockExplorerUrls: [NETWORKS.gnosis.blockExplorer]
+                    chainId: '0x14a34',
+                    chainName: NETWORKS.baseSepolia.name,
+                    nativeCurrency: NETWORKS.baseSepolia.nativeCurrency,
+                    rpcUrls: NETWORKS.baseSepolia.rpcUrls,
+                    blockExplorerUrls: [NETWORKS.baseSepolia.blockExplorer]
                 }]
             });
         } else {
@@ -132,7 +128,7 @@ export async function ensureConnected() {
             userAddress = accounts[0];
             walletClient = createWalletClient({
                 account: userAddress,
-                chain: gnosis,
+                chain: baseSepolia,
                 transport: custom(window.ethereum)
             });
             return userAddress;
@@ -307,7 +303,7 @@ export async function getWsXmrBalance(address = null) {
 }
 
 /**
- * Get user's native balance (xDAI)
+ * Get user's native balance (ETH)
  */
 export async function getNativeBalance(address = null) {
     const targetAddress = address || userAddress;

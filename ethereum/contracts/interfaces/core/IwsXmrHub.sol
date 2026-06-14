@@ -22,7 +22,7 @@ interface IwsXmrHub {
         uint256 lastBuyTimestamp;
         uint256 globalLpPrincipal;
         uint256 globalLpPrincipalShares;
-        uint256 globalPendingSDAI;
+        uint256 globalPendingCollateral;
         uint256 requestNonce;
         uint256 vaultCount;
     }

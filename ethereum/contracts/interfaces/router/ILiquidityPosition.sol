@@ -28,7 +28,7 @@ interface ILiquidityPosition {
     /// @return liquidity Amount of liquidity minted
     /// @return tickLower Lower tick (snapped to tick spacing)
     /// @return tickUpper Upper tick (snapped to tick spacing)
-    /// @return daiConsumed Actual sDAI amount consumed by the mint
+    /// @return daiConsumed Actual collateral amount consumed by the mint
     /// @return wsxmrConsumed Actual wsXMR amount consumed by the mint
     function mintConcentratedPosition(
         uint256 daiAmount,
@@ -53,7 +53,7 @@ interface ILiquidityPosition {
     /// @param oracleXmrPrice Oracle XMR price (18 decimals) for slippage bounds
     /// @return daiOut DAI recovered
     /// @return wsxmrOut wsXMR recovered
-    function drainPosition(uint256 tokenId, uint16 slippageBps, uint256 oracleXmrPrice, uint256 oracleCollateralPrice)
+    function drainPosition(uint256 tokenId, uint16 slippageBps, uint256 oracleXmrPrice)
         external returns (uint256 daiOut, uint256 wsxmrOut);
 
     /// @notice Collect accumulated fees on a position to the diamond.
@@ -71,11 +71,11 @@ interface ILiquidityPosition {
     /// @dev This is the function to use for CR calculations. Pass oracle xmrPrice.
     /// @param tokenId V3 NFT id
     /// @param xmrPriceUSD18 XMR price in USD (18 decimals)
-    function getPositionAmountsAtPrice(uint256 tokenId, uint256 xmrPriceUSD18, uint256 collateralPriceUSD18)
+    function getPositionAmountsAtPrice(uint256 tokenId, uint256 xmrPriceUSD18)
         external view returns (uint256 daiAmount, uint256 wsxmrAmount);
 
     /// @notice Check if the position is out of range at the given oracle XMR price.
     /// @param tokenId V3 NFT id
     /// @param xmrPrice XMR price in USD (18 decimals)
-    function isPositionOutOfRange(uint256 tokenId, uint256 xmrPrice, uint256 collateralPrice) external view returns (bool);
+    function isPositionOutOfRange(uint256 tokenId, uint256 xmrPrice) external view returns (bool);
 }

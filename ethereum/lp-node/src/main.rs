@@ -398,6 +398,8 @@ struct ConfigFile {
     gnosis: NetworkConfig,
     #[serde(default)]
     unichain_testnet: Option<NetworkConfig>,
+    #[serde(default)]
+    base_sepolia: Option<NetworkConfig>,
     monero: MoneroConfig,
     lp_node: LpNodeConfig,
     api: ApiConfig,
@@ -414,13 +416,18 @@ struct ConfigFile {
 struct DeploymentJson {
     chain_id: u64,
     rpc_url: String,
-    ws_url: String,
+    #[serde(default)]
+    ws_url: Option<String>,
     explorer: String,
     contracts: DeploymentContracts,
     external_contracts: DeploymentExternalContracts,
     pool: DeploymentPool,
-    urls: DeploymentUrls,
-    lp_config: DeploymentLpConfig,
+    #[serde(default)]
+    urls: Option<DeploymentUrls>,
+    #[serde(default)]
+    lp_config: Option<DeploymentLpConfig>,
+    #[serde(default)]
+    oracle: Option<DeploymentOracle>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -430,13 +437,17 @@ struct DeploymentContracts {
     ws_xmr: String,
     ws_xmr_hub: String,
     liquidity_router: String,
+    #[serde(default)]
+    swap_helper: Option<String>,
     facets: DeploymentFacets,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 struct DeploymentFacets {
-    #[serde(rename = "RedStoneOracleFacet")]
-    redstone_oracle_facet: String,
+    #[serde(default, rename = "RedStoneOracleFacet")]
+    redstone_oracle_facet: Option<String>,
+    #[serde(default, rename = "ChainlinkDataStreamsOracleFacet")]
+    chainlink_data_streams_oracle_facet: Option<String>,
     #[serde(rename = "VaultFacet")]
     vault_facet: String,
     #[serde(rename = "MintFacet")]
@@ -455,16 +466,20 @@ struct DeploymentExternalContracts {
     s_dai: String,
     #[serde(rename = "wxDAI")]
     wx_dai: String,
-    #[serde(rename = "UniswapV3Factory")]
-    uniswap_v3_factory: String,
-    #[serde(rename = "UniswapV3PositionManager")]
-    uniswap_v3_position_manager: String,
-    #[serde(rename = "SwapHelper")]
-    swap_helper: String,
-    #[serde(rename = "Ed25519Helper")]
-    ed25519_helper: String,
-    #[serde(rename = "PythOracle")]
-    pyth_oracle: String,
+    #[serde(default, rename = "UniswapV3Factory")]
+    uniswap_v3_factory: Option<String>,
+    #[serde(default, rename = "UniswapV3PositionManager")]
+    uniswap_v3_position_manager: Option<String>,
+    #[serde(default, rename = "SwapHelper")]
+    swap_helper: Option<String>,
+    #[serde(default, rename = "Ed25519Helper")]
+    ed25519_helper: Option<String>,
+    #[serde(default, rename = "PythOracle")]
+    pyth_oracle: Option<String>,
+    #[serde(default, rename = "chainlinkVerifierProxy")]
+    chainlink_verifier_proxy: Option<String>,
+    #[serde(default, rename = "linkToken")]
+    link_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -478,15 +493,16 @@ struct DeploymentPool {
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct DeploymentUrls {
-    pyth_hermes: String,
+    #[serde(default)]
+    pyth_hermes: Option<String>,
     monero_daemon: String,
     monero_network: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 struct DeploymentLpConfig {
-    #[serde(rename = "defaultLpVault")]
-    default_lp_vault: String,
+    #[serde(default, rename = "defaultLpVault")]
+    default_lp_vault: Option<String>,
     #[serde(rename = "apiPort")]
     api_port: u16,
     #[serde(rename = "minCollateralRatio")]
@@ -498,6 +514,17 @@ struct DeploymentLpConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct DeploymentOracle {
+    #[serde(rename = "type")]
+    oracle_type: String,
+    xmr_usd_feed_id: String,
+    eth_usd_feed_id: String,
+    report_proxy_url: String,
+    data_engine_url: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 struct NetworkConfig {
     chain_id: u64,
     name: String,
@@ -505,8 +532,14 @@ struct NetworkConfig {
     ws_url: String,
     vault_manager: Address,
     wsxmr_token: Address,
+    #[serde(default = "zero_address")]
     pyth_oracle: Address,
-    pyth_hermes_url: String,
+    #[serde(default)]
+    pyth_hermes_url: Option<String>,
+}
+
+fn zero_address() -> Address {
+    Address::ZERO
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -609,7 +642,9 @@ impl Config {
             "gnosis" => config_file.gnosis,
             "unichain" => config_file.unichain_testnet
                 .context("Unichain testnet config not found in config.toml")?,
-            _ => anyhow::bail!("Invalid NETWORK: {}. Must be 'gnosis' or 'unichain'", network),
+            "base_sepolia" => config_file.base_sepolia
+                .context("Base Sepolia config not found in config.toml")?,
+            _ => anyhow::bail!("Invalid NETWORK: {}. Must be 'gnosis', 'unichain', or 'base_sepolia'", network),
         };
 
         // Override contract addresses from deployment.json (single source of truth)
@@ -617,9 +652,24 @@ impl Config {
             .context("Invalid vault_manager address in deployment.json")?;
         network_config.wsxmr_token = deployment.contracts.ws_xmr.parse()
             .context("Invalid wsxmr_token address in deployment.json")?;
-        network_config.pyth_oracle = deployment.external_contracts.pyth_oracle.parse()
-            .context("Invalid pyth_oracle address in deployment.json")?;
-        network_config.pyth_hermes_url = deployment.urls.pyth_hermes.clone();
+
+        // Pyth oracle is optional (not present on Base Sepolia)
+        if let Some(pyth_addr) = &deployment.external_contracts.pyth_oracle {
+            network_config.pyth_oracle = pyth_addr.parse()
+                .context("Invalid pyth_oracle address in deployment.json")?;
+        }
+
+        // Override WS URL from deployment if present
+        if let Some(ws_url) = &deployment.ws_url {
+            network_config.ws_url = ws_url.clone();
+        }
+
+        // Pyth Hermes URL is optional
+        if let Some(urls) = &deployment.urls {
+            if let Some(pyth_hermes) = &urls.pyth_hermes {
+                network_config.pyth_hermes_url = Some(pyth_hermes.clone());
+            }
+        }
 
         info!("Using vault_manager from deployment.json: {}", network_config.vault_manager);
         info!("Using wsxmr_token from deployment.json: {}", network_config.wsxmr_token);
@@ -629,19 +679,28 @@ impl Config {
         if let Some(ref mut arb) = arbitrage_config {
             arb.pool_address = deployment.pool.uniswap_v3_pool.parse()
                 .context("Invalid pool_address in deployment.json")?;
-            arb.swap_helper = deployment.external_contracts.swap_helper.parse()
-                .context("Invalid swap_helper address in deployment.json")?;
             arb.sdai_address = deployment.external_contracts.s_dai.parse()
                 .context("Invalid sDAI address in deployment.json")?;
-            arb.factory_address = deployment.external_contracts.uniswap_v3_factory.parse()
-                .context("Invalid factory address in deployment.json")?;
+
+            // Swap helper may be in contracts or external_contracts depending on deployment
+            if let Some(swap_helper) = deployment.contracts.swap_helper.as_ref()
+                .or(deployment.external_contracts.swap_helper.as_ref()) {
+                arb.swap_helper = swap_helper.parse()
+                    .context("Invalid swap_helper address in deployment.json")?;
+            }
+
+            // Uniswap V3 factory is optional (not present on Base Sepolia)
+            if let Some(factory) = &deployment.external_contracts.uniswap_v3_factory {
+                arb.factory_address = factory.parse()
+                    .context("Invalid factory address in deployment.json")?;
+            }
             info!("Arbitrage addresses loaded from deployment.json");
         }
 
         // Load sensitive data from environment variables
         let private_key = env::var("PRIVATE_KEY")
             .context("PRIVATE_KEY environment variable not set")?;
-        
+
         // Derive LP vault address from private key
         let lp_vault_address = {
             use alloy::signers::local::PrivateKeySigner;
@@ -649,16 +708,25 @@ impl Config {
                 .context("Invalid PRIVATE_KEY format")?;
             signer.address()
         };
-        
+
         let monero_private_key = env::var("MONERO_PRIVATE_KEY")
             .context("MONERO_PRIVATE_KEY environment variable not set")?;
 
         // Allow overriding config file values with environment variables
+        // Fall back to config.toml [monero] section if deployment.json has no urls
         let monero_config = MoneroConfig {
             daemon_url: env::var("MONERO_DAEMON_URL")
-                .unwrap_or(deployment.urls.monero_daemon),
+                .unwrap_or_else(|_| {
+                    deployment.urls.as_ref()
+                        .map(|u| u.monero_daemon.clone())
+                        .unwrap_or_else(|| config_file.monero.daemon_url.clone())
+                }),
             network: env::var("MONERO_NETWORK")
-                .unwrap_or(deployment.urls.monero_network),
+                .unwrap_or_else(|_| {
+                    deployment.urls.as_ref()
+                        .map(|u| u.monero_network.clone())
+                        .unwrap_or_else(|| config_file.monero.network.clone())
+                }),
         };
 
         let db_path = env::var("DB_PATH")

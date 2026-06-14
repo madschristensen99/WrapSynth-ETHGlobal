@@ -34,6 +34,78 @@ We are currently deploying this protocol to **Base Sepolia testnet** for the hac
 | wsXMR Token | [`0x81AaB8b92b38d0ab60B99b4aF12edaEE92b9C0C4`](https://sepolia.basescan.org/address/0x81AaB8b92b38d0ab60B99b4aF12edaEE92b9C0C4) |
 | wsXmrHub | [`0x0454983E17b803a2C6ff0d98d5D58676525F4A92`](https://sepolia.basescan.org/address/0x0454983E17b803a2C6ff0d98d5D58676525F4A92) |
 | Liquidity Router | [`0x95adc386C3625a539785EF4b3C949f7c1497D268`](https://sepolia.basescan.org/address/0x95adc386C3625a539785EF4b3C949f7c1497D268) |
+| wsXMR/WETH UniV3 Pool | [`0x639664438B2BDD0cBf29397dE8E14803029700C7`](https://sepolia.basescan.org/address/0x639664438B2BDD0cBf29397dE8E14803029700C7) |
+| WETH | [`0x4200000000000000000000000000000000000006`](https://sepolia.basescan.org/address/0x4200000000000000000000000000000000000006) |
+| MockSavingsDAI (ERC4626 WETH wrapper) | [`0xd25f4095f623916074255FE4294f6b8B4DEf5f24`](https://sepolia.basescan.org/address/0xd25f4095f623916074255FE4294f6b8B4DEf5f24) |
+| Ed25519Helper | [`0x8D7DD0A1FD26A2602837B028afB7A1f1b21DA9E7`](https://sepolia.basescan.org/address/0x8D7DD0A1FD26A2602837B028afB7A1f1b21DA9E7) |
+
+<details>
+<summary>Facet addresses</summary>
+
+| Facet | Address |
+|---|---|
+| ChainlinkDataStreamsOracleFacet | [`0x6689612924f0d88219e1b63255956eb866d6992a`](https://sepolia.basescan.org/address/0x6689612924f0d88219e1b63255956eb866d6992a) |
+| VaultFacet | [`0xd66a00d99ff0f4d27277f106ceee4d94972c17c8`](https://sepolia.basescan.org/address/0xd66a00d99ff0f4d27277f106ceee4d94972c17c8) |
+| MintFacet | [`0xcd14533cd779f274aa318de62f86f4bc32443cf2`](https://sepolia.basescan.org/address/0xcd14533cd779f274aa318de62f86f4bc32443cf2) |
+| BurnFacet | [`0xa71909c305ff7250b7043fee16347edf053e451e`](https://sepolia.basescan.org/address/0xa71909c305ff7250b7043fee16347edf053e451e) |
+| LiquidationFacet | [`0x6820a01fb2ff6bec7d44672938ba84e90631f5c7`](https://sepolia.basescan.org/address/0x6820a01fb2ff6bec7d44672938ba84e90631f5c7) |
+| YieldFacet | [`0x6d74451311e153cbe393c056e0acb6bd6769ae72`](https://sepolia.basescan.org/address/0x6d74451311e153cbe393c056e0acb6bd6769ae72) |
+
+**Oracle config:** Chainlink Data Streams testnet — XMR/USD feed `0x0003c70558bd921b1559d37b8e347797f121d1240e7386e68b2bee9b731b0833`, ETH/USD feed `0x000359843a543ee2fe414dc14c7e7920ef10f4372990b79d6361cdc0dd1ba782`
+
+Full deployment manifest: [`deployment.json`](./deployment.json)
+</details>
+
+---
+
+## 🤖 Chainlink CRE — Autonomous Liquidation Keeper
+
+A [Chainlink Runtime Environment](https://docs.chain.link/cre) workflow that keeps
+LP vaults **overcollateralized without a custodial keeper**. LPs open at ~150% CR;
+if XMR rallies and a vault drops below the **120%** liquidation threshold, the
+workflow detects it with **DON consensus** and flags it on-chain. Anyone can then
+`liquidate()` (burn wsXMR for the 10% bonus) or `backstopVault()` (a new LP takes
+the position over) to restore the peg.
+
+```
+cron ─► CRE: read getLiquidatableVaults(hub)  ─►  DON-signed report (address[])
+                                                       │ writeReport
+                                                       ▼
+                           LiquidationAlertRegistry.onReport()
+                           └─ re-validates isVaultLiquidatable() on-chain
+                              emits VaultFlaggedForLiquidation(vault, debt, …)
+```
+
+The registry **re-checks every vault against the live hub before emitting**, so a
+flag can never be forged for a healthy vault — trust comes from on-chain
+re-validation, not the report's author.
+
+- Workflow + docs: [`cre/`](./cre) (`cre/liquidation-keeper/main.ts`)
+- On-chain sink: [`ethereum/contracts/keeper/LiquidationAlertRegistry.sol`](./ethereum/contracts/keeper/LiquidationAlertRegistry.sol)
+- Deploy: `ethereum/script/DeployLiquidationRegistry.s.sol`
+- Controllable-price demo: `ethereum/script/DeployDemoHub.s.sol` + `ethereum/scripts/demo/*.js`
+
+```bash
+# 1. deploy the registry
+cd ethereum && forge script script/DeployLiquidationRegistry.s.sol \
+  --rpc-url https://sepolia.base.org --broadcast
+
+# 2. run the keeper (set hubAddress + registryAddress in cre/liquidation-keeper/config.staging.json)
+cd ../cre && cre workflow simulate liquidation-keeper --env .env --broadcast
+```
+
+See [`cre/README.md`](./cre/README.md) for the full end-to-end demo (force a vault
+underwater → CRE flags it → liquidate / backstop).
+
+---
+
+### Original Deployed Contracts (Gnosis Chain, ChainID 100)
+
+| Contract | Address |
+|---|---|
+| wsXMR Token | [`0x30Aeb2A142744430fFD7D698D5C7C41769CE1279`](https://gnosisscan.io/address/0x30Aeb2A142744430fFD7D698D5C7C41769CE1279) |
+| wsXmrHub | [`0x1fb8E7593B01bCdAE13e5b63e529f0e30a3ebD50`](https://gnosisscan.io/address/0x1fb8E7593B01bCdAE13e5b63e529f0e30a3ebD50) |
+| Liquidity Router | [`0x6893f38e1DeEdCa95ce8995B01550921cEe353a1`](https://gnosisscan.io/address/0x6893f38e1DeEdCa95ce8995B01550921cEe353a1) |
 | wsXMR/sDAI UniV3 Pool | [`0x3b3f640b137ed13c79d2d51c54329816a6fbd85d`](https://gnosisscan.io/address/0x3b3f640b137ed13c79d2d51c54329816a6fbd85d) |
 
 <details>

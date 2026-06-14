@@ -15,6 +15,9 @@ via_ir = true
 # Enable FFI for fetching real prices in E2E tests
 ffi = true
 
+# Allow scripts (e.g. DeployDemoHub) to read/write JSON manifests in the project.
+fs_permissions = [{ access = "read-write", path = "./" }]
+
 # RedStoneOracleFacet no longer compiles with the pinned redstone submodule
 # (via-ir stack-too-deep inside the RedStone connector). The Base Sepolia
 # deployment uses ChainlinkDataStreamsOracleFacet instead, so skip these.

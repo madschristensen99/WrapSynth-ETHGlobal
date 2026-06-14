@@ -85,6 +85,8 @@ pub struct MintTask {
     pub monero_deposit_height: Option<u64>,
     /// Verified deposit amount in atomic units
     pub monero_deposit_amount: Option<u64>,
+    /// Timestamp when LP key was posted on-chain (for setMintReady delay)
+    pub lp_key_posted_at: Option<u64>,
 }
 
 /// Burn task tracking
@@ -488,6 +490,7 @@ mod tests {
             monero_deposit_txid: None,
             monero_deposit_height: None,
             monero_deposit_amount: None,
+            lp_key_posted_at: None,
         };
 
         db.insert_mint_task(&task).unwrap();

@@ -60,10 +60,10 @@ contract DeployRouter is Script {
         console.log("Pool:", pool);
         console.log("Pool Fee:", router.POOL_FEE());
         console.log("Tick Spacing:", router.TICK_SPACING());
-        console.log("sDAI is token0:", router.sDAIIsToken0());
+        console.log("sDAI is token0:", router.collateralIsToken0());
         
         console.log("\n=== Next Steps ===");
-        console.log("1. Initialize pool via router.initializePool(xmrPrice, 1e18)");
+        console.log("1. Initialize pool via router.initializePool(xmrPrice)");
         console.log("2. Register router with hub via hub.migrateLiquidityRouter(router)");
         console.log("3. Diamond cut to add new selectors");
     }
@@ -87,12 +87,13 @@ contract InitializePool is Script {
         vm.startBroadcast(deployerPrivateKey);
         
         wsXMRLiquidityRouter router = wsXMRLiquidityRouter(ROUTER);
-        router.initializePool(xmrPrice, 1e18);
+        uint256 collateralPrice = 1e18; // adjust for actual collateral
+        router.initializePool(xmrPrice, collateralPrice);
         
         console.log("Pool initialized");
         console.log("Token0:", router.token0());
         console.log("Token1:", router.token1());
-        console.log("sDAI is token0:", router.sDAIIsToken0());
+        console.log("sDAI is token0:", router.collateralIsToken0());
         
         vm.stopBroadcast();
     }
@@ -113,7 +114,7 @@ contract VerifyDeployment is Script {
         
         console.log("\n=== Configuration ===");
         console.log("Hub:", router.hub());
-        console.log("sDAI:", router.sDAI());
+        console.log("sDAI:", router.collateralToken());
         console.log("wsXMR:", router.wsXMR());
         console.log("Position Manager:", router.positionManager());
         console.log("Pool:", router.pool());
@@ -122,7 +123,7 @@ contract VerifyDeployment is Script {
         console.log("Pool Initialized:", router.poolInitialized());
         console.log("Token0:", router.token0());
         console.log("Token1:", router.token1());
-        console.log("sDAI is token0:", router.sDAIIsToken0());
+        console.log("sDAI is token0:", router.collateralIsToken0());
         
         console.log("\n=== Constants ===");
         console.log("Pool Fee:", router.POOL_FEE());

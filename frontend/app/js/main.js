@@ -25,6 +25,7 @@ import {
     showMintTab,
     showBurnTab,
     showCoLPTab,
+    showSwapTab,
     saveActiveTab,
     populateVaults,
     showVaultInfo,
@@ -55,14 +56,15 @@ import {
 import { MintFlow } from './mintFlow.js';
 import { BurnFlow } from './burnFlow.js';
 import { getLPPanel } from './lpPanel.js';
+import { getSwapFlow } from './swapFlow.js?v=20260617';
 import { getPoolFlow } from './poolFlow.js';
-import { getCoLPFlow } from './coLPFlow.js';
+import { getCoLPFlow } from './coLPFlow.js?v=2';
 import { getDashboard } from './dashboard.js';
 import { hasActiveSwap, loadActiveSwap, loadActiveSwaps, saveActiveSwap, addOrUpdateActiveSwap, removeActiveSwap, clearActiveSwap, setSwapsArray, getActiveSwapByRequestId, saveToHistory } from './storage.js';
 import { CONTRACTS, SWAP_CONFIG } from './config.js';
-import { displaySwapHistory } from './swapHistory.js';
-import { loadRecentActivity, startActivityFeedWatcher } from './activityFeed.js';
-import { updateProtocolStats } from './protocolStats.js';
+import { displaySwapHistory } from './swapHistory.js?v=3';
+import { loadRecentActivity, startActivityFeedWatcher } from './activityFeed.js?v=4';
+import { updateProtocolStats } from './protocolStats.js?v=3';
 
 // Global state
 let currentMintFlow = null;
@@ -70,8 +72,14 @@ let currentBurnFlow = null;
 let mintProgressInterval = null;
 let cachedVaults = [];
 
-// Price cache with TTL to avoid API rate limits
+// Price caches with TTL to avoid API rate limits
 const priceCache = {
+    value: null,
+    timestamp: 0,
+    ttlMs: 5 * 60 * 1000 // 5 minutes
+};
+
+const ethPriceCache = {
     value: null,
     timestamp: 0,
     ttlMs: 5 * 60 * 1000 // 5 minutes
@@ -149,78 +157,168 @@ async function fetchXmrPrice(forceRefresh = false) {
 }
 
 /**
+ * Fetch ETH/USD price with caching and fallback sources.
+ * Tries CoinGecko first, then CoinCap.
+ */
+async function fetchEthPrice(forceRefresh = false) {
+    const now = Date.now();
+    if (!forceRefresh && ethPriceCache.value && (now - ethPriceCache.timestamp) < ethPriceCache.ttlMs) {
+        return ethPriceCache.value;
+    }
+
+    // Source 1: CoinGecko
+    try {
+        const response = await fetch(
+            'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
+            { signal: AbortSignal.timeout(5000) }
+        );
+        if (response.ok) {
+            const data = await response.json();
+            if (data.ethereum?.usd) {
+                const price = data.ethereum.usd;
+                ethPriceCache.value = price;
+                ethPriceCache.timestamp = now;
+                console.log('[PRICE] ETH CoinGecko:', price);
+                return price;
+            }
+        }
+    } catch (e) {
+        console.warn('[PRICE] ETH CoinGecko failed:', e.message);
+    }
+
+    // Source 2: CoinCap
+    try {
+        const response = await fetch(
+            'https://api.coincap.io/v2/assets/ethereum',
+            { signal: AbortSignal.timeout(5000) }
+        );
+        if (response.ok) {
+            const data = await response.json();
+            if (data.data?.priceUsd) {
+                const price = parseFloat(data.data.priceUsd);
+                ethPriceCache.value = price;
+                ethPriceCache.timestamp = now;
+                console.log('[PRICE] ETH CoinCap:', price);
+                return price;
+            }
+        }
+    } catch (e) {
+        console.warn('[PRICE] ETH CoinCap failed:', e.message);
+    }
+
+    if (ethPriceCache.value) {
+        console.warn('[PRICE] ETH using stale cached price:', ethPriceCache.value);
+        return ethPriceCache.value;
+    }
+
+    console.error('[PRICE] All ETH price sources failed');
+    return null;
+}
+
+/**
  * Fetch 24h volume from mint/burn events
  */
 async function fetch24hVolume() {
-    try {
-        const { getPublicClient } = await import('./viemClient.js');
-        const { CONTRACTS } = await import('./config.js');
-        const { parseAbi } = await import('https://esm.sh/viem@2.7.0');
-        
-        const publicClient = getPublicClient();
-        const currentBlock = await publicClient.getBlockNumber();
-        // Use 10k blocks (~13.9 hours) to stay under RPC limits
-        const lookbackBlocks = 10000n;
-        const fromBlock = currentBlock - lookbackBlocks;
-        
-        const hubAbi = parseAbi([
-            'event MintInitiated(bytes32 indexed requestId, address indexed initiator, address indexed recipient, address lpVault, uint256 xmrAmount, uint256 wsxmrAmount, uint256 feeAmount, bytes32 claimCommitment, bytes32 userPublicKey, uint256 timeout)',
-            'event BurnRequested(bytes32 indexed requestId, address indexed user, address indexed lpVault, uint256 wsxmrAmount, uint256 xmrAmount, uint256 rewardCollateral, bytes32 claimCommitment)'
-        ]);
-        
-        const [mintEvents, burnEvents] = await Promise.all([
-            publicClient.getContractEvents({
-                address: CONTRACTS.hub,
-                abi: hubAbi,
-                eventName: 'MintInitiated',
-                fromBlock,
-                toBlock: 'latest'
-            }),
-            publicClient.getContractEvents({
-                address: CONTRACTS.hub,
-                abi: hubAbi,
-                eventName: 'BurnRequested',
-                fromBlock,
-                toBlock: 'latest'
-            })
-        ]);
-        
-        // Sum up wsXMR amounts from both mints and burns
+    const volumeElement = document.getElementById('volume-stat');
+    if (!volumeElement) return;
+
+    const { getPublicClient } = await import('./viemClient.js');
+    const { CONTRACTS } = await import('./config.js');
+    const { parseAbi } = await import('https://esm.sh/viem@2.7.0');
+
+    const publicClient = getPublicClient();
+    const currentBlock = await publicClient.getBlockNumber();
+
+    const hubAbi = parseAbi([
+        'event MintInitiated(bytes32 indexed requestId, address indexed initiator, address indexed recipient, address lpVault, uint256 xmrAmount, uint256 wsxmrAmount, uint256 feeAmount, bytes32 claimCommitment, bytes32 userPublicKey, uint256 timeout)',
+        'event BurnRequested(bytes32 indexed requestId, address indexed user, address indexed lpVault, uint256 wsxmrAmount, uint256 xmrAmount, uint256 rewardCollateral, bytes32 claimCommitment)'
+    ]);
+
+    function renderVolume(mintEvents, burnEvents, label) {
         let totalWsxmr = 0n;
-        for (const event of mintEvents) {
-            totalWsxmr += event.args.wsxmrAmount;
-        }
-        for (const event of burnEvents) {
-            totalWsxmr += event.args.wsxmrAmount;
-        }
-        
-        // Convert to float (8 decimals)
+        for (const e of mintEvents) totalWsxmr += e.args.wsxmrAmount;
+        for (const e of burnEvents) totalWsxmr += e.args.wsxmrAmount;
+
         const wsxmrVolume = Number(totalWsxmr) / 1e8;
-        
-        // Get XMR price
-        const xmrPrice = await fetchXmrPrice();
-        const volumeUsd = wsxmrVolume * (xmrPrice || 0);
-        
-        const volumeElement = document.getElementById('volume-stat');
-        if (volumeElement) {
-            if (volumeUsd >= 1000) {
-                volumeElement.textContent = `$${(volumeUsd / 1000).toFixed(1)}K`;
-            } else if (volumeUsd >= 1) {
-                volumeElement.textContent = `$${volumeUsd.toFixed(0)}`;
-            } else if (volumeUsd > 0) {
-                volumeElement.textContent = `$${volumeUsd.toFixed(2)}`;
-            } else {
-                volumeElement.textContent = '$0';
-            }
-        }
-        
-        console.log(`24h volume: ${wsxmrVolume.toFixed(2)} wsXMR ($${volumeUsd.toFixed(2)})`);
-    } catch (error) {
-        console.error('Could not fetch 24h volume:', error);
-        const volumeElement = document.getElementById('volume-stat');
-        if (volumeElement) {
+        const xmrPrice = priceCache.value || 0;
+        const volumeUsd = wsxmrVolume * xmrPrice;
+
+        if (volumeUsd >= 1000) {
+            volumeElement.textContent = `$${(volumeUsd / 1000).toFixed(1)}K`;
+        } else if (volumeUsd >= 1) {
+            volumeElement.textContent = `$${volumeUsd.toFixed(0)}`;
+        } else if (volumeUsd > 0) {
+            volumeElement.textContent = `$${volumeUsd.toFixed(2)}`;
+        } else {
             volumeElement.textContent = '$0';
         }
+
+        console.log(`[VOLUME] ${label} → ${wsxmrVolume.toFixed(2)} wsXMR ($${volumeUsd.toFixed(2)})`);
+    }
+
+    // 1) Try single large queries first
+    const singleRanges = [20000n, 10000n, 5000n, 2000n];
+    for (const range of singleRanges) {
+        try {
+            const fromBlock = currentBlock > range ? currentBlock - range : 0n;
+            const [mints, burns] = await Promise.all([
+                publicClient.getContractEvents({ address: CONTRACTS.hub, abi: hubAbi, eventName: 'MintInitiated', fromBlock, toBlock: 'latest' }),
+                publicClient.getContractEvents({ address: CONTRACTS.hub, abi: hubAbi, eventName: 'BurnRequested', fromBlock, toBlock: 'latest' })
+            ]);
+            renderVolume(mints, burns, `Single ${range} blocks`);
+            return;
+        } catch (err) {
+            console.warn(`[VOLUME] Single query ${range} blocks failed`, err.message || err);
+        }
+    }
+
+    // 2) Fallback: chunked scan for true 24h coverage.
+    //    Base ≈2s block time → 43200 blocks ≈24h. We scan in 1000-block chunks.
+    async function fetchChunked(totalBlocks, chunkSize) {
+        const startBlock = currentBlock > totalBlocks ? currentBlock - totalBlocks : 0n;
+        let mints = [], burns = [];
+        const chunks = [];
+        for (let from = startBlock; from < currentBlock; from += chunkSize) {
+            const to = from + chunkSize > currentBlock ? currentBlock : from + chunkSize;
+            chunks.push({ from, to });
+        }
+        // Batch chunks 5-at-a-time to avoid RPC rate limits
+        const batchSize = 5;
+        for (let i = 0; i < chunks.length; i += batchSize) {
+            const batch = chunks.slice(i, i + batchSize);
+            const results = await Promise.all(
+                batch.map(({ from, to }) =>
+                    Promise.all([
+                        publicClient.getContractEvents({ address: CONTRACTS.hub, abi: hubAbi, eventName: 'MintInitiated', fromBlock: from, toBlock: to }).catch(() => []),
+                        publicClient.getContractEvents({ address: CONTRACTS.hub, abi: hubAbi, eventName: 'BurnRequested', fromBlock: from, toBlock: to }).catch(() => [])
+                    ])
+                )
+            );
+            for (const [m, b] of results) {
+                mints = mints.concat(m);
+                burns = burns.concat(b);
+            }
+        }
+        return { mints, burns };
+    }
+
+    try {
+        console.log('[VOLUME] Falling back to chunked 43200-block scan (~24h on Base)');
+        const { mints, burns } = await fetchChunked(43200n, 1000n);
+        renderVolume(mints, burns, 'Chunked 43200 blocks');
+        return;
+    } catch (err) {
+        console.error('[VOLUME] Chunked 43200 failed', err);
+    }
+
+    // 3) Last resort: tiny chunked scan
+    try {
+        const { mints, burns } = await fetchChunked(5000n, 500n);
+        renderVolume(mints, burns, 'Chunked 5000 blocks');
+        return;
+    } catch (err) {
+        console.error('[VOLUME] All volume queries failed');
+        volumeElement.textContent = '—';
     }
 }
 
@@ -256,8 +354,9 @@ async function init() {
     // Check for active swap
     checkForActiveSwap();
     
-    // Fetch XMR price (cached, falls back to CoinCap if CoinGecko blocked)
+    // Fetch prices (cached, falls back to CoinCap if CoinGecko blocked)
     fetchXmrPrice();
+    fetchEthPrice();
     fetch24hVolume();
 
     // Load activity feed and protocol stats
@@ -280,9 +379,10 @@ async function init() {
         }
     }, 60000);
 
-    // Refresh XMR price every 5 minutes (CoinGecko free-tier friendly)
+    // Refresh prices every 5 minutes (CoinGecko free-tier friendly)
     setInterval(() => {
         fetchXmrPrice(true);
+        fetchEthPrice(true);
     }, 5 * 60 * 1000);
     
     // Listen for account/chain changes
@@ -297,6 +397,8 @@ async function init() {
         await handleCoLPTab();
     } else if (savedTab === 'lp') {
         await handleLpTab();
+    } else if (savedTab === 'swap') {
+        await handleSwapTab();
     }
 
     console.log('[SUCCESS] Phantom Agent ready');
@@ -319,6 +421,7 @@ function setupEventHandlers() {
     elements.tabBurn.addEventListener('click', () => showBurnTab());
     elements.tabCoLP.addEventListener('click', () => handleCoLPTab());
     elements.tabLp.addEventListener('click', () => handleLpTab());
+    elements.tabSwap.addEventListener('click', () => handleSwapTab());
     
     // Mint flow
     elements.startMint.addEventListener('click', handleStartMint);
@@ -1204,12 +1307,14 @@ async function handleLpTab() {
     elements.mintPanel.classList.add('hidden');
     elements.burnPanel.classList.add('hidden');
     elements.coLPPanel.classList.add('hidden');
+    elements.swapPanel.classList.add('hidden');
     elements.lpPanel.classList.remove('hidden');
-    
+
     // Update tab buttons
     elements.tabMint.classList.remove('active');
     elements.tabBurn.classList.remove('active');
     elements.tabCoLP.classList.remove('active');
+    elements.tabSwap.classList.remove('active');
     elements.tabLp.classList.add('active');
     saveActiveTab('lp');
 
@@ -1243,6 +1348,18 @@ async function handleLpTab() {
         // Show education view on error
         document.getElementById('lp-stats-view').classList.add('hidden');
         document.getElementById('lp-education-view').classList.remove('hidden');
+    }
+}
+
+/**
+ * Handle Swap tab — show panel and initialize the swap flow
+ */
+async function handleSwapTab() {
+    showSwapTab();
+    try {
+        await getSwapFlow().init();
+    } catch (err) {
+        console.error('[handleSwapTab] init error:', err);
     }
 }
 
@@ -1576,14 +1693,24 @@ async function handleResolveSwap(swap) {
         // PENDING mint: cancel on-chain to recover griefing deposit
         if (swap.type === 'mint' && (swap.state === 'awaiting-lp-key' || swap.state === 'evm-init' || swap.state === 'initiated')) {
             console.log('Resolving stale mint on-chain:', swap.requestId);
-            const { readHub, writeHub } = await import('./viemClient.js');
+            const { readHub, writeHub, getPublicClient } = await import('./viemClient.js');
+            const publicClient = getPublicClient();
             const mintReq = await readHub('getMintRequest', [swap.requestId]);
             const status = Number(mintReq.status);
+            const currentBlock = await publicClient.getBlockNumber();
             // MintStatus: 0=INVALID, 1=PENDING, 2=KEY_PROVIDED, 3=READY, 4=COMPLETED, 5=CANCELLED
             if (status === 5) {
                 await writeHub('withdrawReturns', ['0x0000000000000000000000000000000000000000']);
                 showResumeSuccess(swap.requestId, 'Mint was already cancelled. Your griefing deposit has been claimed.');
             } else if (status === 1 || status === 2 || status === 3) {
+                if (currentBlock < mintReq.timeout) {
+                    const blocksRemaining = Number(mintReq.timeout) - Number(currentBlock);
+                    const estSeconds = blocksRemaining * 5;
+                    const mins = Math.floor(estSeconds / 60);
+                    const secs = estSeconds % 60;
+                    showResumeError(swap.requestId, `Timeout has not expired. Please wait ~${mins}m ${secs}s more (${blocksRemaining} blocks) before cancelling. We are still waiting for the LP to post their address and for you to send your XMR.`);
+                    return;
+                }
                 const receipt = await writeHub('cancelMint', [swap.requestId]);
                 console.log('cancelMint tx:', receipt.transactionHash);
                 showResumeSuccess(swap.requestId, 'Mint cancelled. Your griefing deposit has been refunded.');
@@ -1676,44 +1803,64 @@ async function handleResolveSwap(swap) {
  */
 async function loadVaults() {
     try {
-        // Hardcoded list of known LP vaults
-        // In production, this would query events or use a registry
-        const knownVaults = [
-            '0x492c0b9F298cC49FE2644a2EBc6eA8dF848c72FB', // Your LP vault
-        ];
+        // Discover vaults dynamically via Diamond vault registry
+        const knownVaults = [];
+        try {
+            const vaultCount = await readHub('getVaultCount');
+            for (let i = 0n; i < vaultCount; i++) {
+                try {
+                    const addr = await readHub('getVaultAtIndex', [i]);
+                    if (addr) knownVaults.push(addr);
+                } catch (e) { break; }
+            }
+        } catch (e) {
+            console.warn('[loadVaults] Could not fetch vault list:', e.message);
+        }
         
         const activeVaults = [];
         let totalCollateralWei = 0n;
 
-        // Fetch oracle prices and globalDebtIndex for capacity calculation
+        // Fetch oracle prices for capacity calculation (auto-update on StalePrice)
         let xmrPrice = 150;   // fallback USD per XMR
-        let collPrice = 1.0;  // fallback USD per sDAI
-        let globalDebtIndex = 1e18; // fallback (no scaling)
+        let collPrice = 2500;  // fallback USD per ETH
         try {
-            // Try to get fresh prices first
             const xmrPriceWei = await readHub('getXmrPrice');
             const collPriceWei = await readHub('getCollateralPrice');
-            globalDebtIndex = await readHub('globalDebtIndex');
             xmrPrice = Number(xmrPriceWei) / 1e18;
             collPrice = Number(collPriceWei) / 1e18;
-            console.log('Oracle prices (fresh):', { xmrPrice, collPrice, globalDebtIndex: globalDebtIndex.toString() });
+            console.log('Oracle prices (fresh):', { xmrPrice, collPrice });
         } catch (e) {
-            console.error('⚠️ ORACLE PRICES ARE STALE! Click "Update Prices" button to refresh.');
-            console.warn('Using hardcoded fallback prices - capacity will be INCORRECT:', e.message);
-            // Still fetch globalDebtIndex even if prices are stale
-            try {
-                globalDebtIndex = await readHub('globalDebtIndex');
-            } catch (e2) {
-                console.warn('Could not fetch globalDebtIndex:', e2.message);
+            const msg = (e && e.message) || '';
+            if (msg.includes('StalePrice') || msg.includes('0x19abf40e')) {
+                console.warn('[main] StalePrice on vault capacity load, updating oracle prices...');
+                try {
+                    const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
+                    await updateOraclePrices();
+                    const xmrPriceWei = await readHub('getXmrPrice');
+                    const collPriceWei = await readHub('getCollateralPrice');
+                    xmrPrice = Number(xmrPriceWei) / 1e18;
+                    collPrice = Number(collPriceWei) / 1e18;
+                    console.log('Oracle prices (after update):', { xmrPrice, collPrice });
+                } catch (retryErr) {
+                    console.warn('[main] Price update retry failed:', retryErr.message);
+                }
+            } else {
+                console.warn('Using fallback prices - capacity will be INCORRECT:', e.message);
+            }
+            // Fallback to CoinGecko/CoinCap for ETH price
+            const fetchedEthPrice = await fetchEthPrice();
+            if (fetchedEthPrice) {
+                collPrice = fetchedEthPrice;
+                console.log('[PRICE] Using fetched ETH price for TVL/capacity:', collPrice);
             }
         }
 
-        // Get sDAI contract for convertToAssets
+        // Get collateral token contract for convertToAssets
         const { getPublicClient } = await import('./viemClient.js');
         const { parseAbi } = await import('https://esm.sh/viem@2.7.0');
         const publicClient = getPublicClient();
-        const sDAIAbi = parseAbi(['function convertToAssets(uint256 shares) view returns (uint256)']);
-        const sDAIAddress = CONTRACTS.sDAI;
+        const collateralAbi = parseAbi(['function convertToAssets(uint256 shares) view returns (uint256)']);
+        const collateralAddress = CONTRACTS.sDAI;
 
         for (const vaultAddress of knownVaults) {
             try {
@@ -1728,28 +1875,27 @@ async function loadVaults() {
                 const hasCollateral = vaultData && vaultData.collateralShares && BigInt(vaultData.collateralShares.toString()) > 0n;
 
                 if (hasCollateral || vaultData.active) {
-                    // Convert sDAI shares to underlying DAI assets (like the contract does)
+                    // Convert collateral shares to underlying assets (like the contract does)
                     const collShares = BigInt(vaultData.collateralShares.toString());
                     const lockedShares = BigInt(vaultData.lockedCollateral.toString());
                     const availableShares = collShares > lockedShares ? collShares - lockedShares : 0n;
                     
-                    let collAmountDAI = Number(availableShares) / 1e18; // fallback: assume 1:1
+                    let collAmountETH = Number(availableShares) / 1e18; // fallback: assume 1:1
                     try {
                         const assetsWei = await publicClient.readContract({
-                            address: sDAIAddress,
-                            abi: sDAIAbi,
+                            address: collateralAddress,
+                            abi: collateralAbi,
                             functionName: 'convertToAssets',
                             args: [availableShares]
                         });
-                        collAmountDAI = Number(assetsWei) / 1e18;
+                        collAmountETH = Number(assetsWei) / 1e18;
                     } catch (e) {
                         console.warn('convertToAssets failed, using shares as fallback:', e.message);
                     }
 
-                    // Denormalize debt using globalDebtIndex (actualDebt = normalizedDebt * index / 1e18)
+                    // Use normalizedDebt directly (globalDebtIndex is not exposed on Diamond)
                     const normalizedDebt = BigInt(vaultData.normalizedDebt.toString());
-                    const actualDebt = (normalizedDebt * BigInt(globalDebtIndex.toString())) / BigInt(1e18);
-                    const debtAmount = Number(actualDebt) / 1e8; // wsXMR has 8 decimals
+                    const debtAmount = Number(normalizedDebt) / 1e8; // wsXMR has 8 decimals
                     const pendingDebtAmount = Number(vaultData.pendingDebt) / 1e8;
                     const totalDebt = debtAmount + pendingDebtAmount;
                     const debtValueUsd = debtAmount * xmrPrice;
@@ -1760,24 +1906,40 @@ async function loadVaults() {
                     const pendingCollateral = collPrice > 0 ? pendingDebtValueUsd / collPrice : 0;
                     // Buffer = extra 50% collateral required to maintain 150% ratio (on total debt)
                     const bufferCollateral = (usedCollateral + pendingCollateral) * 0.5;
-                    const freeCollateral = Math.max(0, collAmountDAI - usedCollateral - pendingCollateral - bufferCollateral);
+                    // Co-LP deployed collateral (tracked separately from lockedCollateral)
+                    const coLPShares = BigInt(vaultData.deployedSDAIShares?.toString?.() ?? '0');
+                    let coLPCollateral = Number(coLPShares) / 1e18;
+                    try {
+                        if (coLPShares > 0n) {
+                            const coLPAssetsWei = await publicClient.readContract({
+                                address: collateralAddress,
+                                abi: collateralAbi,
+                                functionName: 'convertToAssets',
+                                args: [coLPShares]
+                            });
+                            coLPCollateral = Number(coLPAssetsWei) / 1e18;
+                        }
+                    } catch (e) {
+                        console.warn('convertToAssets for co-LP shares failed, using 1:1 fallback:', e.message);
+                    }
+                    const freeCollateral = Math.max(0, collAmountETH - usedCollateral - pendingCollateral - bufferCollateral - coLPCollateral);
                     
                     console.log('💰 CAPACITY BREAKDOWN:', {
-                        collAmountDAI,
+                        collAmountETH,
                         usedCollateral,
                         pendingCollateral,
                         bufferCollateral,
+                        coLPCollateral,
                         freeCollateral,
-                        calculation: `${collAmountDAI.toFixed(4)} - ${usedCollateral.toFixed(4)} - ${pendingCollateral.toFixed(4)} - ${bufferCollateral.toFixed(4)} = ${freeCollateral.toFixed(4)}`
+                        calculation: `${collAmountETH.toFixed(4)} - ${usedCollateral.toFixed(4)} - ${pendingCollateral.toFixed(4)} - ${bufferCollateral.toFixed(4)} - ${coLPCollateral.toFixed(4)} = ${freeCollateral.toFixed(4)}`
                     });
 
                     console.log('Vault capacity:', {
                         collShares: collShares.toString(),
                         lockedShares: lockedShares.toString(),
                         availableShares: availableShares.toString(),
-                        collAmountDAI,
+                        collAmountETH,
                         normalizedDebt: normalizedDebt.toString(),
-                        actualDebt: actualDebt.toString(),
                         debtAmount,
                         pendingDebtAmount,
                         totalDebt,
@@ -1788,6 +1950,7 @@ async function loadVaults() {
                         usedCollateral,
                         pendingCollateral,
                         bufferCollateral,
+                        coLPCollateral,
                         freeCollateral
                     });
 
@@ -1797,7 +1960,7 @@ async function loadVaults() {
                     // Enforce maxMintBps cap if configured (mirrors MintFacet check)
                     const maxMintBps = Number(vaultData.maxMintBps);
                     if (maxMintBps > 0) {
-                        const collateralValueUsd = collAmountDAI * collPrice;
+                        const collateralValueUsd = collAmountETH * collPrice;
                         const maxTotalDebtCapacity = (collateralValueUsd * 100) / 150;
                         const maxMintAllowedUsd = (maxTotalDebtCapacity * maxMintBps) / 10000;
                         const maxMintBpsCapacity = maxMintAllowedUsd / xmrPrice;
@@ -1814,6 +1977,7 @@ async function loadVaults() {
                         usedCollateral,
                         pendingCollateral,
                         bufferCollateral,
+                        coLPCollateral,
                         freeCollateral,
                         maxMintCapacityXmr,
                     };
@@ -1835,13 +1999,22 @@ async function loadVaults() {
             vaultsStatEl.textContent = activeVaults.length.toString();
         }
         
-        // Update TVL (convert sDAI shares to approximate USD value)
-        // sDAI is roughly 1:1 with DAI, so we can approximate
+        // Update TVL — include both vault collateral shares AND hub ETH balance
+        // (On Base Sepolia collateral is native ETH, so hub balance is the true TVL)
         const tvlStatEl = document.getElementById('tvl-stat');
-        if (tvlStatEl && totalCollateralWei > 0n) {
-            const collateralInDai = Number(totalCollateralWei) / 1e18;
-            // Assuming DAI ≈ $1
-            const tvlUsd = collateralInDai;
+        let tvlWei = totalCollateralWei;
+        try {
+            const hubBalance = await publicClient.getBalance({ address: CONTRACTS.hub });
+            if (hubBalance > 0n) {
+                tvlWei = hubBalance;
+                console.log('Hub ETH balance (used for TVL):', Number(hubBalance) / 1e18, 'ETH');
+            }
+        } catch (e) {
+            console.warn('Could not fetch hub balance:', e.message);
+        }
+        if (tvlStatEl && tvlWei > 0n) {
+            const collateralInEth = Number(tvlWei) / 1e18;
+            const tvlUsd = collateralInEth * collPrice;
             if (tvlUsd >= 1000) {
                 tvlStatEl.textContent = `$${(tvlUsd / 1000).toFixed(1)}K`;
             } else {
@@ -1852,11 +2025,7 @@ async function loadVaults() {
         }
         
         if (activeVaults.length === 0) {
-            // Fallback to showing the known vault even if query failed
-            activeVaults.push({
-                address: '0x492c0b9F298cC49FE2644a2EBc6eA8dF848c72FB',
-                name: 'LP Vault 0x492c...72FB'
-            });
+            console.log('[loadVaults] No active vaults found on-chain');
         }
         
         cachedVaults = activeVaults;
@@ -1993,9 +2162,93 @@ async function handleStartMint() {
         
         // Use the default LP vault from config
         const { CONTRACTS } = await import('./config.js');
+
+        let lpVault = CONTRACTS.defaultLpVault;
+
+        // If no default LP vault is configured, try the user's own vault first, then discover
+        if (!lpVault) {
+            const userAddr = getUserAddress();
+            console.log('No defaultLpVault configured; trying user vault first, then discovery...');
+
+            // 1. Try user's own vault (with StalePrice retry)
+            try {
+                const hasVault = await readHub('hasActiveVault', [userAddr]);
+                if (hasVault) {
+                    lpVault = userAddr;
+                    console.log('Using user vault as LP vault:', lpVault);
+                }
+            } catch (e) {
+                const msg = (e && e.message) || '';
+                if (msg.includes('StalePrice') || msg.includes('0x19abf40e')) {
+                    console.warn('[Mint] StalePrice checking user vault, updating prices...');
+                    try {
+                        const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
+                        await updateOraclePrices();
+                        const hasVault = await readHub('hasActiveVault', [userAddr]);
+                        if (hasVault) {
+                            lpVault = userAddr;
+                            console.log('Using user vault as LP vault (after price update):', lpVault);
+                        }
+                    } catch (retryErr) {
+                        console.warn('Price update retry failed:', retryErr.message);
+                    }
+                } else {
+                    console.warn('User vault check failed:', e.message);
+                }
+            }
+
+            // 2. Discover any active vault on-chain (with StalePrice retry per vault)
+            if (!lpVault) {
+                try {
+                    const vaultCount = await readHub('getVaultCount');
+                    for (let i = 0n; i < vaultCount; i++) {
+                        try {
+                            const addr = await readHub('getVaultAtIndex', [i]);
+                            if (!addr) continue;
+                            const vault = await readHub('getVault', [addr]);
+                            if (vault.active) {
+                                lpVault = addr;
+                                console.log('Auto-discovered active LP vault:', lpVault);
+                                break;
+                            }
+                        } catch (innerErr) {
+                            const msg = (innerErr && innerErr.message) || '';
+                            if (msg.includes('StalePrice') || msg.includes('0x19abf40e')) {
+                                console.warn(`[Mint] StalePrice on vault index ${i}, updating prices once...`);
+                                try {
+                                    const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
+                                    await updateOraclePrices();
+                                    // Retry this vault after price update
+                                    const addr = await readHub('getVaultAtIndex', [i]);
+                                    if (!addr) continue;
+                                    const vault = await readHub('getVault', [addr]);
+                                    if (vault.active) {
+                                        lpVault = addr;
+                                        console.log('Auto-discovered active LP vault (after price update):', lpVault);
+                                        break;
+                                    }
+                                } catch (retryErr) {
+                                    console.warn('Vault discovery retry failed:', retryErr.message);
+                                }
+                            }
+                            // Continue to next vault on other errors
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Vault discovery failed:', e.message);
+                }
+            }
+        }
+
+        if (!lpVault) {
+            throw new Error(
+                'No active LP vault found. Please ask the operator to set defaultLpVault in deployment.json, ' +
+                'or ensure an LP vault is created and active on-chain.'
+            );
+        }
         
         // Start the flow with the LP vault that has the running LP node
-        await currentMintFlow.start(CONTRACTS.defaultLpVault, amount);
+        await currentMintFlow.start(lpVault, amount);
         
         // Show previous mint banner if user had another mint going
         if (previousMintRequestId) {

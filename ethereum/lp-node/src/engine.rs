@@ -646,6 +646,9 @@ impl SwapEngine {
                     match self.evm.provide_lp_key(request_id, lp_public_spend_bytes.into(), lp_public_view_bytes.into()).await {
                         Ok(tx_hash) => {
                             info!("LP key provided on-chain: {:?}", tx_hash);
+                            mint.lp_key_posted_at = Some(current_timestamp());
+                            mint.updated_at = current_timestamp();
+                            self.db.update_mint_task(mint)?;
                         }
                         Err(e) => {
                             warn!("Failed to provide LP key for mint {}, cannot proceed to setMintReady: {}", hex::encode(mint.request_id), e);
@@ -671,6 +674,20 @@ impl SwapEngine {
                 mint.updated_at = current_timestamp();
                 self.db.update_mint_task(mint)?;
                 return Ok(());
+            }
+
+            // Enforce 25-second delay from when LP key was posted before calling setMintReady
+            if let Some(posted_at) = mint.lp_key_posted_at {
+                let elapsed = current_timestamp().saturating_sub(posted_at);
+                if elapsed < 25 {
+                    let wait_secs = 25 - elapsed;
+                    info!("LP key posted {}s ago, waiting remaining {}s before setMintReady...", elapsed, wait_secs);
+                    tokio::time::sleep(std::time::Duration::from_secs(wait_secs)).await;
+                } else {
+                    info!("LP key posted {}s ago, 25s delay already satisfied", elapsed);
+                }
+            } else {
+                warn!("lp_key_posted_at not set but mint is in KEY_PROVIDED or later state; proceeding without delay");
             }
 
             // Update oracle prices using Node.js script (RedStone SDK only works in JS)

@@ -11,6 +11,7 @@ import {MintFacet} from "../contracts/facets/MintFacet.sol";
 import {BurnFacet} from "../contracts/facets/BurnFacet.sol";
 import {LiquidationFacet} from "../contracts/facets/LiquidationFacet.sol";
 import {YieldFacet} from "../contracts/facets/YieldFacet.sol";
+import {GnosisAddresses} from "../contracts/GnosisAddresses.sol";
 
 contract UpdateOracleFeed is Script {
     address constant VERIFIER_PROXY = 0x8Ac491b7c118a0cdcF048e0f707247fD8C9575f9;
@@ -33,7 +34,7 @@ contract UpdateOracleFeed is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         ChainlinkDataStreamsOracleFacet newOracle = new ChainlinkDataStreamsOracleFacet(
-            wsxmrAddr, VERIFIER_PROXY, XMR_USD_FEED_ID, ETH_USD_FEED_ID
+            wsxmrAddr, VERIFIER_PROXY, GnosisAddresses.SDAI, XMR_USD_FEED_ID, ETH_USD_FEED_ID
         );
         console.log("New OracleFacet:", address(newOracle));
 

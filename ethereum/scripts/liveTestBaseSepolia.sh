@@ -23,7 +23,7 @@ set -uo pipefail
 # ---------------------------------------------------------------------------
 # Config (override via env)
 # ---------------------------------------------------------------------------
-HUB="${HUB:-0x65d3b7ff17dfa21fd6bb1553d51336b66548a1c3}"
+HUB="${HUB:-0x0454983E17b803a2C6ff0d98d5D58676525F4A92}"
 LINK="${LINK:-0xE4aB69C077896252FAFBD49EFD26B5D171A32410}"
 RPC="${RPC:-https://sepolia.base.org}"
 XMR_FEED="${XMR_FEED:-0x0003c70558bd921b1559d37b8e347797f121d1240e7386e68b2bee9b731b0833}"

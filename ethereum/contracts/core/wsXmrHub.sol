@@ -8,7 +8,7 @@ import {IwsXmrHub} from "../interfaces/core/IwsXmrHub.sol";
 import {IwsXMR} from "../interfaces/core/IwsXMR.sol";
 import {IwsXmrLiquidityRouter} from "../interfaces/router/IwsXmrLiquidityRouter.sol";
 import {VaultFacet} from "../facets/VaultFacet.sol";
-import {GnosisAddresses} from "../GnosisAddresses.sol";
+import {CollateralHelpers} from "../libraries/CollateralHelpers.sol";
 
 /**
  * @title wsXmrHub
@@ -64,8 +64,9 @@ contract wsXmrHub is wsXmrStorage, IwsXmrHub {
     
     constructor(
         address _wsxmrToken,
-        address _verifierProxy
-    ) wsXmrStorage(_wsxmrToken, _verifierProxy) {
+        address _verifierProxy,
+        address _collateralToken
+    ) wsXmrStorage(_wsxmrToken, _verifierProxy, _collateralToken) {
         // Initialize allowed pool fee tiers
         allowedPoolFeeTiers[500] = true;   // 0.05%
         allowedPoolFeeTiers[3000] = true;  // 0.3%
@@ -243,34 +244,30 @@ contract wsXmrHub is wsXmrStorage, IwsXmrHub {
         
         // Get prices from storage (set by oracle facet)
         uint256 xmrPrice = _getXmrPriceFromStorage();  // 18 decimals (normalized)
-        uint256 daiPrice = _getCollateralPriceFromStorage();  // 18 decimals (normalized)
+        uint256 collateralPrice = _getCollateralPriceFromStorage();  // 18 decimals (normalized)
         
         // Only count unlocked collateral toward health ratio
         uint256 availableShares = vault.collateralShares > vault.lockedCollateral
             ? vault.collateralShares - vault.lockedCollateral
             : 0;
 
-        // Convert unlocked sDAI shares to DAI
-        (bool success, bytes memory data) = GnosisAddresses.SDAI.staticcall(
-            abi.encodeWithSignature("convertToAssets(uint256)", availableShares)
-        );
-        require(success && data.length >= 32, "convertToAssets failed");
-        uint256 idleDai = abi.decode(data, (uint256));
+        // Convert unlocked collateral shares to assets
+        uint256 idleAssets = CollateralHelpers.toAssets(collateralToken, availableShares);
         
-        uint256 totalDai = idleDai;
+        uint256 totalAssets = idleAssets;
         
-        // Add co-LP position DAI values (ignore wsXMR — belongs to user)
+        // Add co-LP position collateral values (ignore wsXMR — belongs to user)
         uint256[] storage positions = _vaultPositions[lpAddress];
         if (positions.length > 0 && liquidityRouter != address(0)) {
             for (uint256 i = 0; i < positions.length; i++) {
-                (uint256 posDai, ) = IwsXmrLiquidityRouter(liquidityRouter)
-                    .getPositionAmountsAtPrice(positions[i], xmrPrice * 1e10, daiPrice * 1e10);
-                totalDai += posDai;
+                (uint256 posCollateral, ) = IwsXmrLiquidityRouter(liquidityRouter)
+                    .getPositionAmountsAtPrice(positions[i], xmrPrice);
+                totalAssets += posCollateral;
             }
         }
         
-        // Calculate USD values (prices are 18 decimals, totalDai is 18 decimals)
-        uint256 collateralValueUsd = (totalDai * daiPrice) / 1e18; // 18 decimals
+        // Calculate USD values (prices are 18 decimals, totalAssets is 18 decimals)
+        uint256 collateralValueUsd = (totalAssets * collateralPrice) / 1e18; // 18 decimals
         uint256 debtValueUsd = (actualDebt * xmrPrice) / 1e8; // wsXMR has 8 decimals, result 18 decimals
         
         // Calculate ratio: (collateral / debt) * 100

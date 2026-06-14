@@ -1655,7 +1655,7 @@ body.app-page .container {
 /* Mode Selector */
 .mode-selector {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 1rem;
     padding: 1rem;
     background: rgba(255, 255, 255, 0.9);
@@ -2575,6 +2575,10 @@ body.app-page .container {
 
 .legend-dot.buffer-dot {
     background: #eab308;
+}
+
+.legend-dot.colp-dot {
+    background: #3b82f6;
 }
 
 .legend-text {

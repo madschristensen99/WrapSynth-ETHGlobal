@@ -4,6 +4,11 @@ import { CONTRACTS, ABIS, DECIMALS } from './config.js';
 import { readHub, readWsxmr, getUserAddress } from './viemClient.js';
 import { formatUnits } from 'https://esm.sh/viem@2.7.0';
 
+function isStalePriceError(err) {
+    const msg = (err && err.message) || '';
+    return msg.includes('StalePrice') || msg.includes('0x19abf40e');
+}
+
 export class Dashboard {
     constructor() {
         this.userAddress = null;
@@ -19,17 +24,32 @@ export class Dashboard {
         this.userAddress = getUserAddress();
         await this.loadGlobalStats();
         await this.loadVaults();
-        
+
         if (this.userAddress) {
             await this.loadUserPositions();
+        }
+    }
+
+    /**
+     * Read from hub, auto-refreshing oracle prices once on StalePrice.
+     */
+    async readWithPriceRefresh(fn, args) {
+        try {
+            return await readHub(fn, args);
+        } catch (err) {
+            if (!isStalePriceError(err)) throw err;
+            console.warn(`[Dashboard] StalePrice on ${fn}, updating oracle prices...`);
+            const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
+            await updateOraclePrices();
+            return await readHub(fn, args);
         }
     }
 
     async loadGlobalStats() {
         try {
             const totalSupply = await readWsxmr('totalSupply', []);
-            const xmrPrice = await readHub('getXmrPrice', []);
-            const collateralPrice = await readHub('getCollateralPrice', []);
+            const xmrPrice = await this.readWithPriceRefresh('getXmrPrice', []);
+            const collateralPrice = await this.readWithPriceRefresh('getCollateralPrice', []);
             const vaultCount = await readHub('getVaultCount', []);
 
             this.globalStats = {
@@ -55,8 +75,8 @@ export class Dashboard {
             for (let i = 0; i < Number(vaultCount); i++) {
                 const lpAddress = await readHub('getVaultAtIndex', [BigInt(i)]);
                 const vault = await readHub('getVault', [lpAddress]);
-                const health = await readHub('getVaultHealth', [lpAddress]);
-                const debt = await readHub('getVaultDebt', [lpAddress]);
+                const health = await this.readWithPriceRefresh('getVaultHealth', [lpAddress]);
+                const debt = await this.readWithPriceRefresh('getVaultDebt', [lpAddress]);
 
                 vaults.push({
                     lpAddress,
@@ -129,8 +149,8 @@ export class Dashboard {
 
     async refreshPrices() {
         try {
-            const xmrPrice = await readHub('getXmrPrice', []);
-            const collateralPrice = await readHub('getCollateralPrice', []);
+            const xmrPrice = await this.readWithPriceRefresh('getXmrPrice', []);
+            const collateralPrice = await this.readWithPriceRefresh('getCollateralPrice', []);
 
             if (this.globalStats) {
                 this.globalStats.xmrPrice = formatUnits(xmrPrice, DECIMALS.USD);

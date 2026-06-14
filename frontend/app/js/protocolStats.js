@@ -1,10 +1,46 @@
 // Protocol Stats - Calculate real-time protocol metrics
 
 import { getPublicClient, readHub } from './viemClient.js';
-import { CONTRACTS } from './config.js';
+import { CONTRACTS, DEPLOYMENT_BLOCK } from './config.js';
 import { formatUnits } from 'https://esm.sh/viem@2.7.0';
 
-// Correct inline event definitions matching the deployed contract ABI
+const ethPriceCache = {
+    value: null,
+    timestamp: 0,
+    ttlMs: 5 * 60 * 1000
+};
+
+async function fetchEthPrice(forceRefresh = false) {
+    const now = Date.now();
+    if (!forceRefresh && ethPriceCache.value && (now - ethPriceCache.timestamp) < ethPriceCache.ttlMs) {
+        return ethPriceCache.value;
+    }
+    try {
+        const resp = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd', { signal: AbortSignal.timeout(5000) });
+        if (resp.ok) {
+            const data = await resp.json();
+            if (data.ethereum?.usd) {
+                ethPriceCache.value = data.ethereum.usd;
+                ethPriceCache.timestamp = now;
+                return ethPriceCache.value;
+            }
+        }
+    } catch (e) { /* ignore */ }
+    try {
+        const resp = await fetch('https://api.coincap.io/v2/assets/ethereum', { signal: AbortSignal.timeout(5000) });
+        if (resp.ok) {
+            const data = await resp.json();
+            if (data.data?.priceUsd) {
+                ethPriceCache.value = parseFloat(data.data.priceUsd);
+                ethPriceCache.timestamp = now;
+                return ethPriceCache.value;
+            }
+        }
+    } catch (e) { /* ignore */ }
+    return ethPriceCache.value;
+}
+
+// Correct inline event definition matching the deployed contract ABI
 const MINT_INITIATED_EVENT = {
     anonymous: false,
     inputs: [
@@ -23,33 +59,34 @@ const MINT_INITIATED_EVENT = {
     type: 'event'
 };
 
-const DEPLOYMENT_BLOCK = 46580000n; // Approximate deployment block on Gnosis
-const MAX_BLOCK_RANGE = 10000n; // Conservative limit to avoid RPC errors
+const MAX_BLOCK_RANGE = 2000n; // Matches Base Sepolia public RPC limit
 
 export async function updateProtocolStats() {
     try {
         const publicClient = getPublicClient();
         const currentBlock = await publicClient.getBlockNumber();
-        const fromBlock = currentBlock - MAX_BLOCK_RANGE > DEPLOYMENT_BLOCK
-            ? currentBlock - MAX_BLOCK_RANGE
-            : DEPLOYMENT_BLOCK;
+        const fromBlock = DEPLOYMENT_BLOCK > 0n ? DEPLOYMENT_BLOCK : currentBlock - MAX_BLOCK_RANGE;
 
-        // Fetch mint events (capped to RPC provider block-range limit)
-        const mintEvents = await publicClient.getLogs({
-            address: CONTRACTS.hub,
-            event: MINT_INITIATED_EVENT,
-            fromBlock,
-            toBlock: 'latest'
-        }).catch(err => {
-            console.warn('[Protocol Stats] Mint events fetch failed:', err);
-            return [];
-        });
-
-        // Total Minted Ever: sum of all wsxmrAmount from mints (do NOT subtract burns)
+        // Total Minted Ever: paginate through all MintInitiated events since deployment
         let totalMinted = 0;
-        for (const event of mintEvents) {
-            const wsxmrAmount = event.args?.wsxmrAmount || 0n;
-            totalMinted += Number(wsxmrAmount) / 1e8;
+        let scanBlock = fromBlock;
+        while (scanBlock <= currentBlock) {
+            const toBlock = scanBlock + MAX_BLOCK_RANGE > currentBlock ? currentBlock : scanBlock + MAX_BLOCK_RANGE;
+            try {
+                const mintEvents = await publicClient.getLogs({
+                    address: CONTRACTS.hub,
+                    event: MINT_INITIATED_EVENT,
+                    fromBlock: scanBlock,
+                    toBlock
+                });
+                for (const event of mintEvents) {
+                    const wsxmrAmount = event.args?.wsxmrAmount || 0n;
+                    totalMinted += Number(wsxmrAmount) / 1e8;
+                }
+            } catch (err) {
+                console.warn(`[Protocol Stats] Mint events fetch failed for blocks ${scanBlock}-${toBlock}:`, err);
+            }
+            scanBlock = toBlock + 1n;
         }
 
         // Fetch all vault data in one pass: collateral, debt, and fee settings
@@ -86,16 +123,36 @@ async function fetchVaultAggregates() {
         vaultAddresses.push(CONTRACTS.defaultLpVault);
     }
 
-    // Fetch oracle prices
-    let xmrPrice = 150;
-    let collateralPrice = 1.0;
+    // Fetch oracle prices (auto-update once on StalePrice)
+    let xmrPrice = 150;      // fallback USD per XMR
+    let collateralPrice = 2500;  // fallback USD per ETH
     try {
         const xmrPriceWei = await readHub('getXmrPrice');
         const collPriceWei = await readHub('getCollateralPrice');
         xmrPrice = Number(xmrPriceWei) / 1e18;
         collateralPrice = Number(collPriceWei) / 1e18;
     } catch (e) {
-        console.warn('[Protocol Stats] Price fetch failed, using defaults');
+        const msg = (e && e.message) || '';
+        if (msg.includes('StalePrice') || msg.includes('0x19abf40e')) {
+            console.warn('[Protocol Stats] StalePrice, updating oracle prices...');
+            try {
+                const { updateOraclePrices } = await import('./chainlinkWrapper.js?v=' + Date.now());
+                await updateOraclePrices();
+                const xmrPriceWei = await readHub('getXmrPrice');
+                const collPriceWei = await readHub('getCollateralPrice');
+                xmrPrice = Number(xmrPriceWei) / 1e18;
+                collateralPrice = Number(collPriceWei) / 1e18;
+            } catch (retryErr) {
+                console.warn('[Protocol Stats] Price update retry failed:', retryErr.message);
+            }
+        } else {
+            console.warn('[Protocol Stats] Oracle price fetch failed, trying CoinGecko...');
+        }
+        const fetchedEth = await fetchEthPrice();
+        if (fetchedEth) {
+            collateralPrice = fetchedEth;
+            console.log('[Protocol Stats] Using fetched ETH price:', collateralPrice);
+        }
     }
 
     // Sum across all active vaults

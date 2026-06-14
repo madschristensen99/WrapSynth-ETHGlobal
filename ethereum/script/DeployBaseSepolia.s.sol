@@ -60,21 +60,22 @@ contract DeployBaseSepolia is Script {
         console.log("Balance:", deployer.balance / 1e15, "milli-ETH");
         console.log("");
 
-        // ---------- Phase A: collateral mock ----------
-        // On Base Sepolia we use real WETH (0x4200...) as XDAI
-        // SDAI must be an ERC4626 wrapper around WETH for VaultFacet compatibility
-        if (GnosisAddresses.SDAI.code.length == 0) {
-            console.log("Phase A: SDAI wrapper missing at GnosisAddresses.SDAI.");
-            console.log("Deploying MockSavingsDAI wrapping WETH...");
+        // ---------- Phase A: collateral mocks ----------
+        if (GnosisAddresses.XDAI.code.length == 0 || GnosisAddresses.SDAI.code.length == 0) {
+            console.log("Phase A: collateral mocks missing at GnosisAddresses constants.");
+            console.log("Deploying MockWXDAI + MockSavingsDAI...");
 
             vm.startBroadcast(deployerPrivateKey);
-            MockSavingsDAI sdai = new MockSavingsDAI(GnosisAddresses.XDAI);
+            MockWXDAI wxdai = new MockWXDAI();
+            MockSavingsDAI sdai = new MockSavingsDAI(address(wxdai));
             vm.stopBroadcast();
 
             console.log("");
-            console.log("MockSavingsDAI (wraps WETH):", address(sdai));
+            console.log("MockWXDAI:     ", address(wxdai));
+            console.log("MockSavingsDAI:", address(sdai));
             console.log("");
             console.log("ACTION REQUIRED: update contracts/GnosisAddresses.sol:");
+            console.log("  XDAI = <MockWXDAI address above>");
             console.log("  SDAI = <MockSavingsDAI address above>");
             console.log("Then re-run this script for Phase B.");
             return;
@@ -87,27 +88,30 @@ contract DeployBaseSepolia is Script {
         wsXMR wsxmr = new wsXMR();
         console.log("wsXMR:            ", address(wsxmr));
 
-        wsXmrHub hub = new wsXmrHub(address(wsxmr), VERIFIER_PROXY);
+        // Collateral on Base Sepolia is wxDAI (plain ERC20, tracked 1:1 as shares).
+        address collateral = GnosisAddresses.XDAI;
+
+        wsXmrHub hub = new wsXmrHub(address(wsxmr), VERIFIER_PROXY, collateral);
         console.log("wsXmrHub:         ", address(hub));
 
         ChainlinkDataStreamsOracleFacet oracleFacet = new ChainlinkDataStreamsOracleFacet(
-            address(wsxmr), VERIFIER_PROXY, XMR_USD_FEED_ID, ETH_USD_FEED_ID
+            address(wsxmr), VERIFIER_PROXY, collateral, XMR_USD_FEED_ID, ETH_USD_FEED_ID
         );
         console.log("OracleFacet:      ", address(oracleFacet));
 
-        VaultFacet vaultFacet = new VaultFacet(address(wsxmr), VERIFIER_PROXY);
+        VaultFacet vaultFacet = new VaultFacet(address(wsxmr), VERIFIER_PROXY, collateral);
         console.log("VaultFacet:       ", address(vaultFacet));
 
-        MintFacet mintFacet = new MintFacet(address(wsxmr), VERIFIER_PROXY);
+        MintFacet mintFacet = new MintFacet(address(wsxmr), VERIFIER_PROXY, collateral);
         console.log("MintFacet:        ", address(mintFacet));
 
-        BurnFacet burnFacet = new BurnFacet(address(wsxmr), VERIFIER_PROXY);
+        BurnFacet burnFacet = new BurnFacet(address(wsxmr), VERIFIER_PROXY, collateral);
         console.log("BurnFacet:        ", address(burnFacet));
 
-        LiquidationFacet liquidationFacet = new LiquidationFacet(address(wsxmr), VERIFIER_PROXY);
+        LiquidationFacet liquidationFacet = new LiquidationFacet(address(wsxmr), VERIFIER_PROXY, collateral);
         console.log("LiquidationFacet: ", address(liquidationFacet));
 
-        YieldFacet yieldFacet = new YieldFacet(address(wsxmr), VERIFIER_PROXY);
+        YieldFacet yieldFacet = new YieldFacet(address(wsxmr), VERIFIER_PROXY, collateral);
         console.log("YieldFacet:       ", address(yieldFacet));
 
         hub.registerFacets(

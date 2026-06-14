@@ -45,13 +45,13 @@ contract wsXmrStorage {
     uint256 public constant MAX_VAULT_COUNT = 10000;
     uint256 public constant MIN_BURN_AMOUNT = 1e4; // 0.0001 wsXMR (~$0.04 at $400/XMR)
     // Collateral reserved per burn as a buffer OVER PAR (not the vault solvency ratio).
-    // Par is fixed at request via xmrPriceAtRequest, so this only needs to cover DAI depeg
-    // between request and settlement (sDAI yield only improves coverage).
+    // Par is fixed at request via xmrPriceAtRequest, so this only needs to cover collateral depeg
+    // between request and settlement.
     uint256 public constant BURN_LOCK_RATIO = 110;
     
     uint256 public constant XMR_TO_WSXMR_DIVISOR = 1e4;
     uint256 public constant WSXMR_DECIMALS = 1e8;
-    uint256 public constant SDAI_DECIMALS = 1e18;
+    uint256 public constant COLLATERAL_DECIMALS = 1e18; // TODO: adjust to match deployed collateral token decimals (e.g. 1e6 for USDC)
     uint256 public constant PRICE_DECIMALS = 1e18; // Oracle prices are normalized to 18 decimals
     
     uint256 public constant MIN_COLP_RANGE_BPS = 1000;
@@ -103,7 +103,7 @@ contract wsXmrStorage {
         uint256 mintNonce;
         uint256 minBurnAmount;
         bool active;
-        uint256 deployedSDAIShares;
+        uint256 deployedCollateralShares;
         uint16 maxCoLPRangeBps;
         uint256 mintTimeoutBlocks;
         uint256 burnTimeoutBlocks;
@@ -147,7 +147,7 @@ contract wsXmrStorage {
     struct PositionMetadata {
         address vaultOwner;
         address user;
-        uint256 sDAISharesOriginal;
+        uint256 collateralSharesOriginal;
         uint256 wsxmrOriginal;
         int24 tickLower;
         int24 tickUpper;
@@ -160,6 +160,7 @@ contract wsXmrStorage {
     address public immutable wsxmrToken;
     address public immutable deployer;
     address public immutable verifierProxy;
+    address public immutable collateralToken;
     
     // ========== STATE VARIABLES ==========
     
@@ -176,6 +177,7 @@ contract wsXmrStorage {
     
     // Router
     address public liquidityRouter;
+    address public swapRouter;
     
     // Oracle state
     int192 public lastXmrPrice;
@@ -192,7 +194,7 @@ contract wsXmrStorage {
     uint256 public globalLpPrincipal;
     mapping(address => uint256) public lpPrincipalShares;
     uint256 public globalLpPrincipalShares;
-    uint256 public globalPendingSDAI;
+    uint256 public globalPendingCollateral;
     uint256 public globalBadDebt;
     uint256 public globalPendingBurnDebt;
     uint256 internal _requestNonce;
@@ -287,10 +289,11 @@ contract wsXmrStorage {
     
     // ========== CONSTRUCTOR ==========
     
-    constructor(address _wsxmrToken, address _verifierProxy) {
+    constructor(address _wsxmrToken, address _verifierProxy, address _collateralToken) {
         wsxmrToken = _wsxmrToken;
         deployer = msg.sender;
         verifierProxy = _verifierProxy;
+        collateralToken = _collateralToken;
         globalDebtIndex = 1e18;
         _reentrancyStatus = _NOT_ENTERED;
     }

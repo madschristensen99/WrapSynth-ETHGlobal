@@ -78,7 +78,8 @@ contract DeployAndTestMainnet is Script {
         console.log("============================================================");
         console.log("STEP 2: Deploying wsXmrHub");
         console.log("============================================================");
-        hub = new wsXmrHub(address(wsxmr), VERIFIER);
+        address collateral = address(0); // mock collateral
+        hub = new wsXmrHub(address(wsxmr), VERIFIER, collateral);
         console.log("wsXmrHub deployed to:", address(hub));
         console.log("");
 
@@ -86,22 +87,22 @@ contract DeployAndTestMainnet is Script {
         console.log("STEP 3: Deploying Facets");
         console.log("============================================================");
         
-        oracleFacet = new RedStoneOracleFacet(address(wsxmr), VERIFIER);
+        oracleFacet = new RedStoneOracleFacet(address(wsxmr), VERIFIER, collateral);
         console.log("RedStoneOracleFacet deployed to:", address(oracleFacet));
         
-        vaultFacet = new VaultFacet(address(wsxmr), VERIFIER);
+        vaultFacet = new VaultFacet(address(wsxmr), VERIFIER, collateral);
         console.log("VaultFacet deployed to:", address(vaultFacet));
         
-        mintFacet = new MintFacet(address(wsxmr), VERIFIER);
+        mintFacet = new MintFacet(address(wsxmr), VERIFIER, collateral);
         console.log("MintFacet deployed to:", address(mintFacet));
         
-        burnFacet = new BurnFacet(address(wsxmr), VERIFIER);
+        burnFacet = new BurnFacet(address(wsxmr), VERIFIER, collateral);
         console.log("BurnFacet deployed to:", address(burnFacet));
         
-        liquidationFacet = new LiquidationFacet(address(wsxmr), VERIFIER);
+        liquidationFacet = new LiquidationFacet(address(wsxmr), VERIFIER, collateral);
         console.log("LiquidationFacet deployed to:", address(liquidationFacet));
         
-        yieldFacet = new YieldFacet(address(wsxmr), VERIFIER);
+        yieldFacet = new YieldFacet(address(wsxmr), VERIFIER, collateral);
         console.log("YieldFacet deployed to:", address(yieldFacet));
         console.log("");
 

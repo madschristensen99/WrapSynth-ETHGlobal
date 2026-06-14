@@ -47,6 +47,18 @@ wsxmr_token = "0x0000000000000000000000000000000000000000"
 pyth_oracle = "0x0000000000000000000000000000000000000000"
 pyth_hermes_url = "https://hermes.pyth.network"
 
+[base_sepolia]
+chain_id = 84532
+name = "Base Sepolia"
+rpc_url = "https://sepolia.base.org"
+ws_url = "wss://base-sepolia-rpc.publicnode.com"
+explorer = "https://sepolia.basescan.org"
+
+# Contract addresses are loaded from deployment.base-sepolia.json.
+# Do NOT edit addresses here — edit ../../deployment.base-sepolia.json instead.
+vault_manager = "0x0000000000000000000000000000000000000000"
+wsxmr_token = "0x0000000000000000000000000000000000000000"
+
 [monero]
 # Monero daemon RPC configuration
 # The LP node connects to a Monero daemon (monerod) for blockchain data
