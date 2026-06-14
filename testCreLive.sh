@@ -328,27 +328,48 @@ refresh_oracle_fresh "flag"
 FLAG_BEFORE="$(cast call "$REGISTRY" "flagCount()(uint256)" --rpc-url "$RPC" 2>/dev/null || echo 0)"
 echo "flagCount before: $FLAG_BEFORE"
 
-USE_REAL_CRE=0
-if command -v cre >/dev/null 2>&1; then
-  CRE_HELP="$(cre workflow simulate --help 2>&1 || true)"
-  if echo "$CRE_HELP" | grep -qi "simulate" && ! echo "$CRE_HELP" | grep -qi "wasm must be set"; then
-    USE_REAL_CRE=1
-  fi
-fi
+# Prefer the official CRE developer CLI (installed to ~/.cre/bin) over any stale
+# binary earlier on PATH (e.g. the internal runner at /usr/local/bin/cre, which
+# errors with "wasm must be set"). Also put Bun on PATH for TS compilation.
+CRE_BIN="$(command -v cre 2>/dev/null || true)"
+[ -x "$HOME/.cre/bin/cre" ] && CRE_BIN="$HOME/.cre/bin/cre"
+[ -d "$HOME/.bun/bin" ] && export PATH="$HOME/.bun/bin:$PATH"
 
-if [ "$USE_REAL_CRE" = "1" ]; then
-  echo "Detected the CRE developer CLI — running the real workflow simulation..."
-  (cd "$ROOT/cre" && cre workflow simulate liquidation-keeper --env .env --broadcast) \
-    && ok "cre workflow simulate --broadcast completed" \
-    || bad "cre workflow simulate failed"
-else
-  echo "CRE developer CLI not available (installed binary is the internal runner)."
+run_equivalent_flag() {
   echo "Using the CRE-equivalent onReport path (mirrors main.ts exactly)..."
   if (cd "$ETH_DIR" && REGISTRY="$REGISTRY" node scripts/demo/creEquivalentFlag.js); then
     ok "CRE-equivalent flag (onReport) succeeded"
   else
     bad "CRE-equivalent flag step failed"
   fi
+}
+
+USE_REAL_CRE=0
+if [ -n "$CRE_BIN" ]; then
+  CRE_HELP="$("$CRE_BIN" workflow simulate --help 2>&1 || true)"
+  # The developer CLI documents --broadcast/--target; the internal runner does not.
+  if echo "$CRE_HELP" | grep -qi -- "--broadcast" && ! echo "$CRE_HELP" | grep -qi "wasm must be set"; then
+    USE_REAL_CRE=1
+  fi
+fi
+
+if [ "$USE_REAL_CRE" = "1" ]; then
+  echo "Detected the CRE developer CLI ($CRE_BIN) — running the real workflow simulation..."
+  echo "  (delivers onReport via the Base Sepolia MockKeystoneForwarder 0x82300bd7c3958625581cc2f77bc6464dcecdf3e5)"
+  # One-time: install the workflow's CRE SDK + WASM tooling.
+  if [ ! -d "$ROOT/cre/liquidation-keeper/node_modules" ]; then
+    echo "Installing CRE workflow deps (bun install)..."
+    (cd "$ROOT/cre/liquidation-keeper" && bun install) || warn "bun install failed; the real CRE run may fail"
+  fi
+  if (cd "$ROOT/cre" && "$CRE_BIN" workflow simulate liquidation-keeper --target staging-settings --broadcast --env .env); then
+    ok "cre workflow simulate --broadcast completed (flag delivered via KeystoneForwarder)"
+  else
+    warn "Real CRE simulate failed (see error above; common causes: stale finalized-block read before fix, or missing deps). Falling back to the equivalent path."
+    run_equivalent_flag
+  fi
+else
+  echo "CRE developer CLI not available (installed binary is the internal runner)."
+  run_equivalent_flag
 fi
 
 # ---------------------------------------------------------------------------

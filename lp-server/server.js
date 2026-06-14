@@ -1,13 +1,30 @@
-require('dotenv').config();
-const express = require('express');
-const ethers = require('ethers');
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const burnHandler = require('./burnHandler');
+import 'dotenv/config';
+import express from 'express';
+import * as ethers from 'ethers';
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
+import * as burnHandler from './burnHandler.js';
+import { executeUnlinkDeposit } from './unlinkDeposit.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json());
+
+// CORS for frontend access
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 const RPC_URL = process.env.RPC_URL || 'https://sepolia.base.org';
@@ -50,7 +67,7 @@ const HUB_ABI = [
 ];
 
 // ─── Ethers Setup ───────────────────────────────────────────────────────────
-const provider = new ethers.providers.JsonRpcProvider(RPC_URL, CHAIN_ID);
+const provider = new ethers.JsonRpcProvider(RPC_URL, CHAIN_ID);
 const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
 const hub = new ethers.Contract(HUB_ADDRESS, HUB_ABI, wallet);
 
@@ -65,11 +82,11 @@ const pendingMints = new Map(); // requestId -> { initiatedAt, keyPostedAt }
 // ─── Ed25519 Key Generation ─────────────────────────────────────────────────
 async function generateEd25519Keys() {
   const ed = await import('@noble/ed25519');
-  const crypto = require('crypto');
+  const { createHash } = await import('crypto');
   
   // Set up SHA-512 sync for @noble/ed25519
   if (!ed.etc.sha512Sync) {
-    ed.etc.sha512Sync = (...m) => crypto.createHash('sha512').update(Buffer.concat(m)).digest();
+    ed.etc.sha512Sync = (...m) => createHash('sha512').update(Buffer.concat(m)).digest();
   }
   
   const spendPriv = ed.utils.randomPrivateKey();
@@ -106,9 +123,9 @@ async function processMint(reqIdHex, lpPublicSpendKey, lpPublicViewKey) {
   // Fetch required bond from vault config
   const vault = await hub.getVault(wallet.address);
   const requiredBond = vault.mintReadyBond;
-  console.log(`[Chain] Vault mintReadyBond: ${ethers.utils.formatEther(requiredBond)} ETH`);
+  console.log(`[Chain] Vault mintReadyBond: ${ethers.formatEther(requiredBond)} ETH`);
 
-  console.log(`[Chain] Calling setMintReady(${reqIdHex}) with bond ${ethers.utils.formatEther(requiredBond)} ETH...`);
+  console.log(`[Chain] Calling setMintReady(${reqIdHex}) with bond ${ethers.formatEther(requiredBond)} ETH...`);
   const tx2 = await hub.setMintReady(reqIdHex, { value: requiredBond });
   console.log(`[Chain] setMintReady tx: ${tx2.hash}`);
   const receipt2 = await tx2.wait();
@@ -117,43 +134,76 @@ async function processMint(reqIdHex, lpPublicSpendKey, lpPublicViewKey) {
 
 // ─── On-chain Event Listener ────────────────────────────────────────────────
 async function startEventListener() {
-  const fromBlock = await provider.getBlockNumber();
-  console.log(`Listening for MintInitiated from block ${fromBlock}`);
+  let lastCheckedBlock = await provider.getBlockNumber();
+  console.log(`Listening for MintInitiated from block ${lastCheckedBlock}`);
 
-  hub.on('MintInitiated', async (requestId, initiator, recipient, lpVault, xmrAmount, wsxmrAmount, feeAmount, claimCommitment, userPublicKey, timeout, event) => {
-    const reqIdHex = ethers.utils.hexlify(requestId);
-    if (lpVault.toLowerCase() !== wallet.address.toLowerCase()) {
-      console.log(`[Event] MintInitiated ${reqIdHex} — not our vault, ignoring`);
-      return;
-    }
-    console.log(`[Event] MintInitiated ${reqIdHex}`);
-    console.log(`  Initiator: ${initiator}`);
-    console.log(`  Recipient: ${recipient}`);
-    console.log(`  xmrAmount: ${xmrAmount.toString()}`);
-    console.log(`  Timeout block: ${timeout.toString()}`);
-    pendingMints.set(reqIdHex, {
-      requestId: reqIdHex,
-      initiator,
-      recipient,
-      xmrAmount: xmrAmount.toString(),
-      timeoutBlock: timeout.toNumber(),
-      initiatedAt: Date.now(),
-    });
-
-    // Auto-process: generate keys, provideLPKey, wait, setMintReady
+  // Poll every 15 seconds using getLogs instead of hub.on() to avoid filter issues
+  setInterval(async () => {
     try {
-      const keys = await generateEd25519Keys();
-      console.log(`[Mint] Generated Ed25519 keys for ${reqIdHex}`);
-      console.log(`  lpPublicSpendKey: ${keys.lpPublicSpendKey}`);
-      console.log(`  lpPublicViewKey: ${keys.lpPublicViewKey}`);
-      await processMint(reqIdHex, keys.lpPublicSpendKey, keys.lpPublicViewKey);
+      const currentBlock = await provider.getBlockNumber();
+      if (currentBlock <= lastCheckedBlock) return;
+
+      // Retry on rate limit
+      let retries = 3;
+      let events = [];
+      while (retries > 0) {
+        try {
+          const filter = hub.filters.MintInitiated();
+          events = await hub.queryFilter(filter, lastCheckedBlock + 1, currentBlock);
+          break;
+        } catch (err) {
+          if (err.message?.includes('rate limit') || err.code === 'UNKNOWN_ERROR') {
+            retries--;
+            if (retries === 0) throw err;
+            console.log('[Event] Rate limited, waiting 5s before retry...');
+            await new Promise(r => setTimeout(r, 5000));
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      for (const event of events) {
+        const { requestId, initiator, recipient, lpVault, xmrAmount, wsxmrAmount, feeAmount, claimCommitment, userPublicKey, timeout } = event.args;
+        const reqIdHex = ethers.hexlify(requestId);
+        if (lpVault.toLowerCase() !== wallet.address.toLowerCase()) {
+          console.log(`[Event] MintInitiated ${reqIdHex} — not our vault, ignoring`);
+          continue;
+        }
+        console.log(`[Event] MintInitiated ${reqIdHex}`);
+        console.log(`  Initiator: ${initiator}`);
+        console.log(`  Recipient: ${recipient}`);
+        console.log(`  xmrAmount: ${xmrAmount.toString()}`);
+        console.log(`  Timeout block: ${timeout.toString()}`);
+        pendingMints.set(reqIdHex, {
+          requestId: reqIdHex,
+          initiator,
+          recipient,
+          xmrAmount: xmrAmount.toString(),
+          timeoutBlock: Number(timeout),
+          initiatedAt: Date.now(),
+        });
+
+        // Auto-process: generate keys, provideLPKey, wait, setMintReady
+        try {
+          const keys = await generateEd25519Keys();
+          console.log(`[Mint] Generated Ed25519 keys for ${reqIdHex}`);
+          console.log(`  lpPublicSpendKey: ${keys.lpPublicSpendKey}`);
+          console.log(`  lpPublicViewKey: ${keys.lpPublicViewKey}`);
+          await processMint(reqIdHex, keys.lpPublicSpendKey, keys.lpPublicViewKey);
+        } catch (err) {
+          console.error(`[Mint] Auto-process failed for ${reqIdHex}:`, err.message || err);
+          const mint = pendingMints.get(reqIdHex) || {};
+          mint.autoProcessError = err.message || String(err);
+          pendingMints.set(reqIdHex, mint);
+        }
+      }
+
+      lastCheckedBlock = currentBlock;
     } catch (err) {
-      console.error(`[Mint] Auto-process failed for ${reqIdHex}:`, err.message || err);
-      const mint = pendingMints.get(reqIdHex) || {};
-      mint.autoProcessError = err.message || String(err);
-      pendingMints.set(reqIdHex, mint);
+      console.error('[Event] Poll error:', err.message);
     }
-  });
+  }, 15000);
 }
 
 // ─── HTTP Routes ────────────────────────────────────────────────────────────
@@ -242,6 +292,42 @@ app.get('/reports', async (req, res) => {
   } catch (e) {
     console.error('Report fetch failed:', e.message);
     res.status(502).json({ error: e.message });
+  }
+});
+
+// ─── Unlink Private Deposit Endpoint ────────────────────────────────────────
+app.post('/api/unlink-deposit', async (req, res) => {
+  const { tokenAddress, amount } = req.body;
+
+  if (!tokenAddress) {
+    return res.status(400).json({ error: 'tokenAddress is required' });
+  }
+
+  if (!amount) {
+    return res.status(400).json({ error: 'amount is required (in wei/base units)' });
+  }
+
+  console.log(`[Unlink] Deposit request: ${amount} of token ${tokenAddress}`);
+
+  try {
+    const result = await executeUnlinkDeposit({
+      tokenAddress,
+      amount,
+      privateKey: PRIVATE_KEY,
+      rpcUrl: RPC_URL,
+    });
+
+    res.json({
+      success: true,
+      message: 'Unlink deposit completed',
+      ...result,
+    });
+  } catch (err) {
+    console.error('[Unlink] Deposit failed:', err.message || err);
+    res.status(500).json({
+      error: err.message || String(err),
+      success: false,
+    });
   }
 });
 

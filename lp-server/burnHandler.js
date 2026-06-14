@@ -1,8 +1,8 @@
 // burnHandler.js — LP-side burn operations for WrapSynth
 // Handles: listen for BurnRequested → proposeHash → finalizeBurn
 
-const crypto = require('crypto');
-const ethers = require('ethers');
+import crypto from 'crypto';
+import * as ethers from 'ethers';
 
 // ─── Config ─────────────────────────────────────────────────────────────────
 const AUTO_PROCESS_BURNS = (process.env.AUTO_PROCESS_BURNS || 'false').toLowerCase() === 'true';
@@ -48,6 +48,13 @@ function normalizeHex32(val) {
  */
 async function computeSecretHash(secretBytes) {
   const ed = await import('@noble/ed25519');
+  const cryptoModule = await import('crypto');
+  
+  // Set up SHA-512 sync for @noble/ed25519
+  if (!ed.etc.sha512Sync) {
+    ed.etc.sha512Sync = (...m) => cryptoModule.default.createHash('sha512').update(Buffer.concat(m)).digest();
+  }
+  
   const secretBigInt = BigInt('0x' + Buffer.from(secretBytes).toString('hex'));
   // Ed25519 group order
   const ED25519_L = 2n ** 252n + 27742317777372353535851937790883648493n;
@@ -59,15 +66,15 @@ async function computeSecretHash(secretBytes) {
     tmp = tmp >> 8n;
   }
 
-  const publicKeyPoint = ed.Point.BASE.multiply(secretReduced);
+  const publicKeyPoint = ed.ExtendedPoint.BASE.multiply(secretReduced);
   const publicKeyBytes = publicKeyPoint.toRawBytes();
   const publicKeyHex = bytesToHex(publicKeyBytes);
 
   const px = publicKeyHex.slice(0, 66);
   const py = '0x' + publicKeyHex.slice(66);
 
-  const encoded = ethers.utils.solidityPack(['bytes32', 'bytes32'], [px, py]);
-  const hash = ethers.utils.keccak256(encoded);
+  const encoded = ethers.solidityPacked(['bytes32', 'bytes32'], [px, py]);
+  const hash = ethers.keccak256(encoded);
   return { secretHash: hash, px, py };
 }
 
@@ -136,7 +143,7 @@ class BurnState {
  * Generates secret, optionally sends XMR, calls proposeHash on-chain.
  */
 async function handleBurnRequest(requestId, user, lpVault, wsxmrAmount, xmrAmount, claimCommitment) {
-  const reqIdHex = ethers.utils.hexlify(requestId);
+  const reqIdHex = ethers.hexlify(requestId);
 
   if (lpVault.toLowerCase() !== wallet.address.toLowerCase()) {
     console.log(`[Burn] BurnRequested ${reqIdHex} — not our vault, ignoring`);
@@ -240,7 +247,7 @@ async function processPropose(reqIdHex, customKeys = {}) {
  * Auto-finalize if enabled.
  */
 async function handleBurnCommitted(requestId) {
-  const reqIdHex = ethers.utils.hexlify(requestId);
+  const reqIdHex = ethers.hexlify(requestId);
   console.log(`[Burn] BurnCommitted ${reqIdHex}`);
 
   const burn = pendingBurns.get(reqIdHex);
@@ -295,10 +302,10 @@ async function processFinalize(reqIdHex) {
  * Handle BurnFinalized event.
  */
 async function handleBurnFinalized(requestId, secret, rewardPaid) {
-  const reqIdHex = ethers.utils.hexlify(requestId);
+  const reqIdHex = ethers.hexlify(requestId);
   console.log(`[Burn] BurnFinalized ${reqIdHex}`);
   console.log(`  Secret: ${secret.slice(0, 10)}...`);
-  console.log(`  Reward: ${ethers.utils.formatEther(rewardPaid)} ETH`);
+  console.log(`  Reward: ${ethers.formatEther(rewardPaid)} ETH`);
 
   const burn = pendingBurns.get(reqIdHex);
   if (burn) {
@@ -311,7 +318,7 @@ async function handleBurnFinalized(requestId, secret, rewardPaid) {
  * Handle BurnCancelled or BurnAborted event.
  */
 async function handleBurnCancelled(requestId) {
-  const reqIdHex = ethers.utils.hexlify(requestId);
+  const reqIdHex = ethers.hexlify(requestId);
   console.log(`[Burn] BurnCancelled/Aborted ${reqIdHex}`);
   const burn = pendingBurns.get(reqIdHex);
   if (burn) burn.state = 'cancelled';
@@ -340,29 +347,72 @@ function attachEventListeners(hub, _wallet, _provider) {
     'function getBurnRequest(bytes32 requestId) external view returns (tuple(address user, address lpVault, uint256 wsxmrAmount, uint256 xmrAmount, uint256 feeAmount, uint256 collateralLocked, uint256 rewardCollateral, bytes32 claimCommitment, bytes32 secretHash, uint256 timeout, uint256 commitDeadline, uint256 state))',
   ];
 
-  const existingAbi = hub.interface.fragments.map(f => f.format(ethers.utils.FormatTypes.full));
+  const existingAbi = hub.interface.fragments.map(f => f.format('full'));
   const mergedAbi = Array.from(new Set([...existingAbi, ...burnAbi]));
-  hubContract = new ethers.Contract(hub.address, mergedAbi, wallet);
+  hubContract = new ethers.Contract(hub.target, mergedAbi, wallet);
 
-  hubContract.on('BurnRequested', (requestId, user, lpVault, wsxmrAmount, xmrAmount, rewardCollateral, claimCommitment, event) => {
-    handleBurnRequest(requestId, user, lpVault, wsxmrAmount, xmrAmount, claimCommitment);
-  });
+  // Use polling instead of hub.on() to avoid filter issues with Base Sepolia RPC
+  let lastCheckedBlock = 0;
+  provider.getBlockNumber().then(b => { lastCheckedBlock = b; });
 
-  hubContract.on('BurnCommitted', (requestId, deadline, event) => {
-    handleBurnCommitted(requestId);
-  });
+  setInterval(async () => {
+    try {
+      const currentBlock = await provider.getBlockNumber();
+      if (currentBlock <= lastCheckedBlock) return;
 
-  hubContract.on('BurnFinalized', (requestId, secret, rewardPaid, event) => {
-    handleBurnFinalized(requestId, secret, rewardPaid);
-  });
+      // Helper to query with retry on rate limit
+      async function safeQuery(filter, from, to) {
+        let retries = 3;
+        while (retries > 0) {
+          try {
+            return await hubContract.queryFilter(filter, from, to);
+          } catch (err) {
+            if (err.message?.includes('rate limit') || err.code === 'UNKNOWN_ERROR') {
+              retries--;
+              if (retries === 0) throw err;
+              await new Promise(r => setTimeout(r, 5000));
+            } else {
+              throw err;
+            }
+          }
+        }
+        return [];
+      }
 
-  hubContract.on('BurnCancelled', (requestId, event) => {
-    handleBurnCancelled(requestId);
-  });
+      // Poll for BurnRequested
+      const requested = await safeQuery(hubContract.filters.BurnRequested(), lastCheckedBlock + 1, currentBlock);
+      for (const event of requested) {
+        const { requestId, user, lpVault, wsxmrAmount, xmrAmount, rewardCollateral, claimCommitment } = event.args;
+        handleBurnRequest(requestId, user, lpVault, wsxmrAmount, xmrAmount, claimCommitment);
+      }
 
-  hubContract.on('BurnAborted', (requestId, event) => {
-    handleBurnCancelled(requestId);
-  });
+      // Poll for BurnCommitted
+      const committed = await safeQuery(hubContract.filters.BurnCommitted(), lastCheckedBlock + 1, currentBlock);
+      for (const event of committed) {
+        handleBurnCommitted(event.args.requestId);
+      }
+
+      // Poll for BurnFinalized
+      const finalized = await safeQuery(hubContract.filters.BurnFinalized(), lastCheckedBlock + 1, currentBlock);
+      for (const event of finalized) {
+        handleBurnFinalized(event.args.requestId, event.args.secret, event.args.rewardPaid);
+      }
+
+      // Poll for BurnCancelled / BurnAborted
+      const cancelled = await safeQuery(hubContract.filters.BurnCancelled(), lastCheckedBlock + 1, currentBlock);
+      for (const event of cancelled) {
+        handleBurnCancelled(event.args.requestId);
+      }
+      const aborted = await safeQuery(hubContract.filters.BurnAborted(), lastCheckedBlock + 1, currentBlock);
+      for (const event of aborted) {
+        handleBurnCancelled(event.args.requestId);
+      }
+
+      lastCheckedBlock = currentBlock;
+    } catch (err) {
+      console.error('[Burn] Poll error:', err.message);
+    }
+  }, 15000);
 
   console.log('[Burn] Event listeners attached for burn operations');
 }
@@ -388,7 +438,7 @@ function registerRoutes(app) {
     const { requestId, lpPublicSpendKey, lpPublicViewKey } = req.body;
     if (!requestId) return res.status(400).json({ error: 'requestId required' });
 
-    const reqIdHex = ethers.utils.hexlify(requestId);
+    const reqIdHex = ethers.hexlify(requestId);
 
     try {
       await processPropose(reqIdHex, { lpPublicSpendKey, lpPublicViewKey });
@@ -409,7 +459,7 @@ function registerRoutes(app) {
     const { requestId } = req.body;
     if (!requestId) return res.status(400).json({ error: 'requestId required' });
 
-    const reqIdHex = ethers.utils.hexlify(requestId);
+    const reqIdHex = ethers.hexlify(requestId);
 
     try {
       await processFinalize(reqIdHex);
@@ -430,7 +480,7 @@ function registerRoutes(app) {
     const { requestId } = req.body;
     if (!requestId) return res.status(400).json({ error: 'requestId required' });
 
-    const reqIdHex = ethers.utils.hexlify(requestId);
+    const reqIdHex = ethers.hexlify(requestId);
 
     try {
       console.log(`[Burn] Calling claimSlashedCollateral(${reqIdHex})`);
@@ -458,7 +508,7 @@ function registerRoutes(app) {
     const { requestId } = req.body;
     if (!requestId) return res.status(400).json({ error: 'requestId required' });
 
-    const reqIdHex = ethers.utils.hexlify(requestId);
+    const reqIdHex = ethers.hexlify(requestId);
 
     try {
       console.log(`[Burn] Calling resolveDeclinedProposal(${reqIdHex})`);
@@ -481,7 +531,7 @@ function registerRoutes(app) {
 
 // ─── Module Export ──────────────────────────────────────────────────────────
 
-module.exports = {
+export {
   attachEventListeners,
   registerRoutes,
   pendingBurns,

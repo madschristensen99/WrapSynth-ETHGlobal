@@ -29,6 +29,7 @@ const elements = {
     tabCoLP: null,
     tabLp: null,
     tabSwap: null,
+    tabUnlink: null,
 
     // Panels
     mintPanel: null,
@@ -36,6 +37,7 @@ const elements = {
     coLPPanel: null,
     lpPanel: null,
     swapPanel: null,
+    unlinkPanel: null,
     
     // Mint panel elements
     mintPanelContent: null,
@@ -99,6 +101,7 @@ export function initUI() {
     elements.tabCoLP = document.getElementById('tab-co-lp');
     elements.tabLp = document.getElementById('tab-lp');
     elements.tabSwap = document.getElementById('tab-swap');
+    elements.tabUnlink = document.getElementById('tab-unlink');
 
     // Panels
     elements.mintPanel = document.getElementById('mint-panel');
@@ -106,6 +109,7 @@ export function initUI() {
     elements.coLPPanel = document.getElementById('co-lp-panel');
     elements.lpPanel = document.getElementById('lp-panel');
     elements.swapPanel = document.getElementById('swap-panel');
+    elements.unlinkPanel = document.getElementById('unlink-panel');
     
     // Mint panel elements
     elements.mintPanelContent = document.getElementById('mint-panel');
@@ -393,11 +397,13 @@ export function showMintTab() {
     elements.tabCoLP.classList.remove('active');
     elements.tabLp.classList.remove('active');
     elements.tabSwap.classList.remove('active');
+    elements.tabUnlink.classList.remove('active');
     elements.mintPanel.classList.remove('hidden');
     elements.burnPanel.classList.add('hidden');
     elements.coLPPanel.classList.add('hidden');
     elements.lpPanel.classList.add('hidden');
     elements.swapPanel.classList.add('hidden');
+    elements.unlinkPanel.classList.add('hidden');
     saveActiveTab('mint');
 }
 
@@ -410,11 +416,13 @@ export async function showBurnTab() {
     elements.tabCoLP.classList.remove('active');
     elements.tabLp.classList.remove('active');
     elements.tabSwap.classList.remove('active');
+    elements.tabUnlink.classList.remove('active');
     elements.burnPanel.classList.remove('hidden');
     elements.mintPanel.classList.add('hidden');
     elements.coLPPanel.classList.add('hidden');
     elements.lpPanel.classList.add('hidden');
     elements.swapPanel.classList.add('hidden');
+    elements.unlinkPanel.classList.add('hidden');
     saveActiveTab('burn');
 
     // Update balance when showing burn tab
@@ -803,11 +811,13 @@ export function showCoLPTab() {
     elements.tabBurn.classList.remove('active');
     elements.tabLp.classList.remove('active');
     elements.tabSwap.classList.remove('active');
+    elements.tabUnlink.classList.remove('active');
     elements.coLPPanel.classList.remove('hidden');
     elements.mintPanel.classList.add('hidden');
     elements.burnPanel.classList.add('hidden');
     elements.lpPanel.classList.add('hidden');
     elements.swapPanel.classList.add('hidden');
+    elements.unlinkPanel.classList.add('hidden');
     saveActiveTab('co-lp');
 }
 
@@ -817,12 +827,30 @@ export function showSwapTab() {
     elements.tabBurn.classList.remove('active');
     elements.tabCoLP.classList.remove('active');
     elements.tabLp.classList.remove('active');
+    elements.tabUnlink.classList.remove('active');
     elements.swapPanel.classList.remove('hidden');
     elements.mintPanel.classList.add('hidden');
     elements.burnPanel.classList.add('hidden');
     elements.coLPPanel.classList.add('hidden');
     elements.lpPanel.classList.add('hidden');
+    elements.unlinkPanel.classList.add('hidden');
     saveActiveTab('swap');
+}
+
+export function showUnlinkTab() {
+    elements.tabUnlink.classList.add('active');
+    elements.tabMint.classList.remove('active');
+    elements.tabBurn.classList.remove('active');
+    elements.tabCoLP.classList.remove('active');
+    elements.tabLp.classList.remove('active');
+    elements.tabSwap.classList.remove('active');
+    elements.unlinkPanel.classList.remove('hidden');
+    elements.mintPanel.classList.add('hidden');
+    elements.burnPanel.classList.add('hidden');
+    elements.coLPPanel.classList.add('hidden');
+    elements.lpPanel.classList.add('hidden');
+    elements.swapPanel.classList.add('hidden');
+    saveActiveTab('unlink');
 }
 
 export function showSuccess(title, message) {

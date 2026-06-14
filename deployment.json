@@ -4,7 +4,7 @@
   "chainId": 84532,
   "deploymentDate": "2026-06-13T06:28:00Z",
   "deploymentBlock": 42799844,
-  "_updated": "Corrected wsXMR, sDAI, liquidityRouter, wxDAI addresses to match on-chain deployment",
+  "_updated": "Corrected wsXMR, wETH, liquidityRouter, wxDAI addresses to match on-chain deployment",
   "rpcUrl": "https://sepolia.base.org",
   "wsUrl": null,
   "explorer": "https://sepolia.basescan.org",
@@ -23,7 +23,7 @@
     }
   },
   "externalContracts": {
-    "sDAI": "0xd25f4095f623916074255FE4294f6b8B4DEf5f24",
+    "wETH": "0x4200000000000000000000000000000000000006",
     "wxDAI": "0x4200000000000000000000000000000000000006",
     "chainlinkVerifierProxy": "0x8Ac491b7c118a0cdcF048e0f707247fD8C9575f9",
     "linkToken": "0xE4aB69C077896252FAFBD49EFD26B5D171A32410",

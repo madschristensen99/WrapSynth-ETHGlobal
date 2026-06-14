@@ -197,7 +197,12 @@ export class MintFlow {
             await storeSeed(this.agent.seed, publicSpendKeyHex);
             console.log('Seed stored for resume');
         } catch (e) {
-            console.warn('Could not store seed:', e.message);
+            console.error('Could not store seed:', e);
+            console.error('Error details:', {
+                message: e.message,
+                code: e.code,
+                stack: e.stack
+            });
         }
 
         updateSwapState({

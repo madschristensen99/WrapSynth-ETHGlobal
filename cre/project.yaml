@@ -10,14 +10,14 @@
 local-simulation:
   rpcs:
     - chain-name: ethereum-testnet-sepolia-base-1
-      url: https://sepolia.base.org
+      url: https://base-sepolia-rpc.publicnode.com
 
 staging-settings:
   rpcs:
     - chain-name: ethereum-testnet-sepolia-base-1
-      url: https://sepolia.base.org
+      url: https://base-sepolia-rpc.publicnode.com
 
 production-settings:
   rpcs:
     - chain-name: ethereum-testnet-sepolia-base-1
-      url: https://sepolia.base.org
+      url: https://base-sepolia-rpc.publicnode.com

@@ -1,5 +1,5 @@
 [profile.default]
-src = "contracts"
+src = "unlink-integration"
 test = "test"
 out = "out"
 libs = ["lib"]

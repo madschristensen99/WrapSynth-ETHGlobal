@@ -19,7 +19,9 @@ let _publicClient = null;
 async function readClient() {
     if (_publicClient) return _publicClient;
     const { createPublicClient, http } = await viem();
-    _publicClient = createPublicClient({ transport: http(UNISWAP_CONFIG.rpcUrl) });
+    _publicClient = createPublicClient({
+        transport: http(UNISWAP_CONFIG.rpcUrl, { retryCount: 3, retryDelay: 1500, timeout: 15000 })
+    });
     return _publicClient;
 }
 

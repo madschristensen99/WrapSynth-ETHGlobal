@@ -2,6 +2,16 @@
 
 A decentralized protocol for wrapping Monero (XMR) on Gnosis Chain using a diamond proxy pattern with LP-backed minting and burning.
 
+## 🚀 Privacy Integration (Unlink SDK)
+
+We have extended our Wrapped XMR product by integrating the Unlink SDK. This allows users to deposit private Monero assets (converted via a bridge) into our vault with enhanced privacy guarantees compared to standard EVM transfers.
+
+New Primitives Added:
+
+deposit(): Deposits ERC-20 tokens from an EVM wallet into Unlink's private state.
+withdraw(): Reveals private state and mints/transferstokens back to a destination EVM address.
+Demo: See /ethereum/unlink-integration/unlink-client.js for the deposit flow and /ethereum/unlink-integration/server.js for the withdrawal endpoint.
+
 ## 🚀 Gnosis Mainnet Deployment
 
 **Deployed:** June 2, 2026 (v1.3)

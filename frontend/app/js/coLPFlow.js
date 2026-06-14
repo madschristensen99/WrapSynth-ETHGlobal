@@ -361,8 +361,8 @@ export class CoLPFlow {
         console.log(`[CoLP] scanning blocks ${fromBlock} to ${currentBlock} for user ${this.userAddress}`);
 
         const hubAbi = parseAbi([
-            'event CoLPDeployed(address indexed vault, address indexed user, uint256 indexed tokenId, uint256 sDAIShares, uint256 wsxmrAmount, uint16 rangeBps)',
-            'event CoLPUnwound(uint256 indexed tokenId, address indexed vault, address indexed user, uint256 daiOut, uint256 wsxmrOut, bool fromLiquidation)',
+            'event CoLPDeployed(address indexed vault, address indexed user, uint256 indexed tokenId, uint256 wETHShares, uint256 wsxmrAmount, uint16 rangeBps)',
+            'event CoLPUnwound(uint256 indexed tokenId, address indexed vault, address indexed user, uint256 wethOut, uint256 wsxmrOut, bool fromLiquidation)',
             'event CoLPRebalanced(uint256 indexed oldTokenId, uint256 indexed newTokenId, address indexed vault, address user, address caller, uint16 newRangeBps)'
         ]);
 

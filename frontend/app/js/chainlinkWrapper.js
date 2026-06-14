@@ -14,7 +14,36 @@
 import { CONTRACTS, ORACLE_CONFIG } from './config.js';
 import { getWalletClient, getPublicClient, getUserAddress } from './viemClient.js';
 
-export async function updateOraclePrices() {
+// Prevent multiple concurrent updates and rate-limit repeated calls.
+let _pendingUpdate = null;
+let _lastUpdateTs = 0;
+const UPDATE_COOLDOWN_MS = 30_000;
+
+export async function updateOraclePrices(force = false) {
+    // Deduplicate: if an update is already in-flight, wait on it.
+    if (_pendingUpdate) {
+        console.log('[Oracle] Update already in progress, waiting...');
+        return _pendingUpdate;
+    }
+
+    // Cooldown: skip if we successfully updated recently (unless forced).
+    const now = Date.now();
+    if (!force && (now - _lastUpdateTs) < UPDATE_COOLDOWN_MS) {
+        console.log(`[Oracle] Prices updated recently (${Math.round((now - _lastUpdateTs) / 1000)}s ago), skipping.`);
+        return true;
+    }
+
+    _pendingUpdate = _doUpdateOraclePrices();
+    try {
+        const result = await _pendingUpdate;
+        _lastUpdateTs = Date.now();
+        return result;
+    } finally {
+        _pendingUpdate = null;
+    }
+}
+
+async function _doUpdateOraclePrices() {
     console.log('Updating oracle prices with Chainlink Data Streams...');
 
     const { encodeFunctionData, parseAbi } = await import('https://esm.sh/viem@2.7.0');

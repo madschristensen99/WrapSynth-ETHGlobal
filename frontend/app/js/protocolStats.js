@@ -37,7 +37,7 @@ async function fetchEthPrice(forceRefresh = false) {
             }
         }
     } catch (e) { /* ignore */ }
-    return ethPriceCache.value;
+    return ethPriceCache.value || 1681.13;
 }
 
 // Correct inline event definition matching the deployed contract ABI

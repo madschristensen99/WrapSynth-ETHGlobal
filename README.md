@@ -1,40 +1,33 @@
-# ⛴️ WrapSynth - ETHGlobal NYC 2026
+# ⛴️ WrapSynth - Wrapped Monero on EVM Chains Gnosis and Base (ETHGlobal NYC 2026)
 
-> **🏗️ ETHGlobal NYC 2026 Project - Base Sepolia Deployment**  
-> This is a fork of [madschristensen99/wrapsynth](https://github.com/madschristensen99/wrapsynth) for ETHGlobal NYC 2026. We're taking the existing trustless Monero bridge protocol and integrating it with:
-> - **Chainlink Data Streams** - Real-time oracle price feeds for XMR/USD
-> - **Unichain Privacy** - Enhanced privacy features for cross-chain swaps
-> - **Uniswap API** - Improved liquidity routing and swap optimization
-> 
-> **Deploying on Base Sepolia testnet** for the hackathon demo.
+## 📢 ETHGlobal NYC 2026 Bounty Submission: Continuity Track
 
-**A trustless cross-chain ferry for Monero. The original protocol is live on Gnosis Chain, backed by overcollateralized LP vaults and Ed25519 atomic swap commitments.**
+To satisfy the **Continuity Track** requirements, this repository clearly distinguishes between our **Original Production State** and our **New Bounty Contribution**. 
 
-🌐 **Original:** [wrapsynth.com](https://wrapsynth.com) · 📊 **[wsXMR/sDAI Pool on Gnosis](https://gnosisscan.io/address/0x3b3f640b137ed13c79d2d51c54329816a6fbd85d)**
+### 🔹 Pre-Event: The Original Protocol (The Base)
+> **Live since June 2, 2026:** Our protocol was already a fully operational trustless cross-chain ferry for Monero on Gnosis Chain mainnet. We launched with overcollateralized LP vaults and Ed25519 atomic swap commitments—no custodians, no federations.
 
-WrapSynth brings Monero's anonymity set to DeFi and DeFi liquidity to Monero. Users swap XMR for wsXMR through atomic-swap mechanics enforced on-chain: LPs post sDAI collateral, mint/burn settlement is gated by Ed25519 secret reveals verified on-chain, and timeout-based slashing protects both sides. No custodian, no federation, no trusted intermediary — every swap settles peer-to-peer between a user and an LP vault.
+- ✅ **wsXMR/sDAI Pool Live:** [View Pool](https://gnosisscan.io/address/0x3b3f640b137ed13c79d2d51c54329816a6fbd85d)
+- ✅ **Verified on Mainnet:** All contracts verified on Gnosisscan (wsXmrHub, Facets, Router).
+- ✅ **Audited & Stable:** Two rounds of security review; critical solvency invariants tested.
+
+### 🔸 Post-Event: The Bounty Contribution (Unlink Integration)
+> **What we built for the bounty:** We integrated the **Unlink SDK** to enable private deposits of wrapped Monero, bridging EVM liquidity with off-chain privacy primitives.
+
+- 🚀 **New Primitives Added:** `deposit()` and `withdraw()` interfaces using Unlink's private state.
+- 🔒 **Enhanced Privacy Layer:** Users can now deposit private Monero assets (converted via a bridge) into our vault with enhanced privacy guarantees compared to standard EVM transfers.
+- 🧪 **Demo Code:** See [`unlink-integration/`](./unlink-integration/) for the client-side `deposit.js` and server-side withdrawal endpoints.
 
 ---
 
-## 🚀 Status
+## 🚀 ETHGlobal NYC 2026 - Base Sepolia Deployment (This Fork)
 
-### ETHGlobal NYC 2026 - Base Sepolia (This Fork)
+We are currently deploying this protocol to **Base Sepolia testnet** for the hackathon demo, integrating:
+- **Chainlink Data Streams** for real-time XMR/USD price feeds.
+- **Uniswap API** integration for optimized liquidity routing.
+- **Unichain Privacy** features for enhanced cross-chain privacy.
 
-- 🔄 **Integrating Chainlink Data Streams** for real-time XMR/USD price feeds
-- 🔄 **Adding Unichain Privacy** features for enhanced cross-chain privacy
-- 🔄 **Implementing Uniswap API** integration for optimized liquidity routing
-- 🔄 **Deploying to Base Sepolia testnet** for hackathon demo
-
-### Original Production Deployment (Gnosis Chain Mainnet)
-
-- ✅ Full hub + facet system deployed and **verified on Gnosisscan**
-- ✅ **wsXMR/sDAI Uniswap V3 pool live** (0.3% fee tier)
-- ✅ Complete mint → trade → burn cycle executed end-to-end on mainnet
-- ✅ Two rounds of security review completed; all critical findings resolved (see [Security](#-security))
-- ✅ 633-line solvency invariant test suite + audit regression suite
-- 🔄 Solana port in development (`solana/`)
-
-### Base Sepolia Deployment (ChainID 84532)
+### 📍 Contract Addresses (Base Sepolia - ChainID 84532)
 
 | Contract | Address |
 |---|---|

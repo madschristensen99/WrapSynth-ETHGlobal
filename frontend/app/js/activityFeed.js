@@ -18,8 +18,8 @@ const HUB_EVENTS_ABI = parseAbi([
     'event VaultCreated(address indexed lp)',
     'event CollateralDeposited(address indexed lp, uint256 amount, uint256 shares)',
     'event CollateralWithdrawn(address indexed lp, uint256 amount, uint256 shares)',
-    'event CoLPDeployed(address indexed vault, address indexed user, uint256 indexed tokenId, uint256 sDAIShares, uint256 wsxmrAmount, uint16 rangeBps)',
-    'event CoLPUnwound(uint256 indexed tokenId, address indexed vault, address indexed user, uint256 daiReturned, uint256 wsxmrReturned, bool liquidationTriggered)',
+    'event CoLPDeployed(address indexed vault, address indexed user, uint256 indexed tokenId, uint256 wETHShares, uint256 wsxmrAmount, uint16 rangeBps)',
+    'event CoLPUnwound(uint256 indexed tokenId, address indexed vault, address indexed user, uint256 wethReturned, uint256 wsxmrReturned, bool liquidationTriggered)',
     'event CoLPRebalanced(uint256 indexed oldTokenId, uint256 indexed newTokenId, address indexed vault, address user, address keeper, uint16 newRangeBps)'
 ]);
 
@@ -211,7 +211,7 @@ function renderActivityItem(event, currentBlock) {
             const shortUser = user !== 'Unknown' ? `${user.slice(0, 6)}...${user.slice(-4)}` : 'Unknown';
             const seized = args.totalSeized ? (Number(args.totalSeized) / 1e18).toFixed(2) : '?';
             title = 'Burn Slashed';
-            detail = `${seized} sDAI seized from ${shortUser}`;
+            detail = `${seized} wETH seized from ${shortUser}`;
             break;
         }
         case 'burnCancelled': {
@@ -232,7 +232,7 @@ function renderActivityItem(event, currentBlock) {
             const shortLp = lp !== 'Unknown' ? `${lp.slice(0, 6)}...${lp.slice(-4)}` : 'Unknown';
             const amount = args.amount ? (Number(args.amount) / 1e18).toFixed(2) : '?';
             title = 'Collateral Deposited';
-            detail = `${amount} sDAI by ${shortLp}`;
+            detail = `${amount} wETH by ${shortLp}`;
             break;
         }
         case 'collateralWithdrawn': {
@@ -240,7 +240,7 @@ function renderActivityItem(event, currentBlock) {
             const shortLp = lp !== 'Unknown' ? `${lp.slice(0, 6)}...${lp.slice(-4)}` : 'Unknown';
             const amount = args.amount ? (Number(args.amount) / 1e18).toFixed(2) : '?';
             title = 'Collateral Withdrawn';
-            detail = `${amount} sDAI by ${shortLp}`;
+            detail = `${amount} wETH by ${shortLp}`;
             break;
         }
         case 'coLPDeployed': {
@@ -248,11 +248,11 @@ function renderActivityItem(event, currentBlock) {
             const shortVault = vault !== 'Unknown' ? `${vault.slice(0, 6)}...${vault.slice(-4)}` : 'Unknown';
             const user = args.user || 'Unknown';
             const shortUser = user !== 'Unknown' ? `${user.slice(0, 6)}...${user.slice(-4)}` : 'Unknown';
-            const sDAI = args.sDAIShares ? (Number(args.sDAIShares) / 1e18).toFixed(2) : '?';
+            const wETH = args.wETHShares ? (Number(args.wETHShares) / 1e18).toFixed(2) : '?';
             const wsxmr = args.wsxmrAmount ? (Number(args.wsxmrAmount) / 1e8).toFixed(4) : '?';
             const tokenId = args.tokenId?.toString() || '?';
             title = 'Co-LP Position Opened';
-            detail = `Token #${tokenId} — ${sDAI} sDAI + ${wsxmr} wsXMR (${shortUser} + ${shortVault})`;
+            detail = `Token #${tokenId} — ${wETH} wETH + ${wsxmr} wsXMR (${shortUser} + ${shortVault})`;
             break;
         }
         case 'coLPUnwound': {
@@ -261,11 +261,11 @@ function renderActivityItem(event, currentBlock) {
             const shortVault = vault !== 'Unknown' ? `${vault.slice(0, 6)}...${vault.slice(-4)}` : 'Unknown';
             const user = args.user || 'Unknown';
             const shortUser = user !== 'Unknown' ? `${user.slice(0, 6)}...${user.slice(-4)}` : 'Unknown';
-            const daiRet = args.daiReturned ? (Number(args.daiReturned) / 1e18).toFixed(2) : '?';
+            const wethRet = args.wethReturned ? (Number(args.wethReturned) / 1e18).toFixed(2) : '?';
             const wsxmrRet = args.wsxmrReturned ? (Number(args.wsxmrReturned) / 1e8).toFixed(4) : '?';
             const liq = args.liquidationTriggered ? ' (liquidation)' : '';
             title = 'Co-LP Position Unwound';
-            detail = `Token #${tokenId} — ${daiRet} sDAI + ${wsxmrRet} wsXMR${liq}`;
+            detail = `Token #${tokenId} — ${wethRet} wETH + ${wsxmrRet} wsXMR${liq}`;
             break;
         }
         case 'coLPRebalanced': {

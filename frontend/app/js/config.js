@@ -12,8 +12,8 @@ export const NETWORKS = {
         id: D.chainId || 84532,
         name: D.network || 'Base Sepolia',
         rpcUrls: [
-            D.rpcUrl || 'https://sepolia.base.org',
-            'https://base-sepolia-rpc.publicnode.com'
+            'https://base-sepolia-rpc.publicnode.com',
+            D.rpcUrl || 'https://sepolia.base.org'
         ],
         blockExplorer: D.explorer || 'https://sepolia.basescan.org',
         nativeCurrency: {
@@ -40,7 +40,7 @@ export const CONTRACTS = {
     hub: DC.wsXmrHub || '0x0454983E17b803a2C6ff0d98d5D58676525F4A92',
     wsxmrToken: DC.wsXMR || '0x500735b66b9968e9fc7d6c6d1ae6ccf19a6a238b',
     liquidityRouter: DC.liquidityRouter || '0x0F9172c037eC5dFFa940aFa357Ee0A52B5a08d71',
-    sDAI: DE.sDAI || '0x57cA07e0443c7Dc720CAd8AF63D8a6bBeDabD202',
+    wETH: '0x4200000000000000000000000000000000000006',
     uniswapV3Pool: DP.uniswapV3Pool || '0x79cF96e0FA6aBE3cF02994B35c68A69359857Ae9',
     // Default LP vault to use for mints (the active LP running the LP node)
     defaultLpVault: DLC.defaultLpVault || null
@@ -74,7 +74,7 @@ export const UNISWAP_CONFIG = {
     chainId: 84532,
     chainIdHex: '0x14a34',
     chainName: 'Base Sepolia Testnet',
-    rpcUrl: 'https://sepolia.base.org',
+    rpcUrl: 'https://base-sepolia-rpc.publicnode.com',
     blockExplorer: 'https://sepolia.basescan.org',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     proxyUrl: 'http://localhost:3002', // unused by the Swap tab; kept for future mainnet/Trading-API path
@@ -176,7 +176,7 @@ export const RAW_ABIS = {
                 { name: 'mintNonce', type: 'uint256' },
                 { name: 'minBurnAmount', type: 'uint256' },
                 { name: 'active', type: 'bool' },
-                { name: 'deployedSDAIShares', type: 'uint256' },
+                { name: 'deployedWETHShares', type: 'uint256' },
                 { name: 'maxCoLPRangeBps', type: 'uint16' }
             ],
             name: '',
@@ -367,10 +367,10 @@ export const ABIS = {
 
     liquidityRouter: [
         // LP side
-        'function allocateLiquidity(uint256 sDAIAmount) external',
-        'function withdrawSDAI(uint256 sDAIAmount) external',
-        'function increaseUserApproval(address user, uint256 additionalSDAI) external',
-        'function decreaseUserApproval(address user, uint256 reduceSDAI) external',
+        'function allocateLiquidity(uint256 wETHAmount) external',
+        'function withdrawWETH(uint256 wETHAmount) external',
+        'function increaseUserApproval(address user, uint256 additionalWETH) external',
+        'function decreaseUserApproval(address user, uint256 reduceWETH) external',
         // User side
         'function depositWsxmr(uint256 amount) external',
         'function withdrawWsXMR(uint256 wsxmrAmount) external',
@@ -378,8 +378,8 @@ export const ABIS = {
         'function decreaseLpApproval(address lp, uint256 reduceWsxmr) external',
         'function burnFromInternalBalance(uint256 wsxmrAmount, address lpVault) external returns (bytes32)',
         // Positions
-        'function createPosition(address lp, address user, uint256 sDAIAmount, uint256 wsxmrAmount, uint256 deadline) external returns (uint256)',
-        'function createPositionWithPriceUpdate(address lp, address user, uint256 sDAIAmount, uint256 wsxmrAmount, uint256 deadline, bytes[] calldata oracleUpdateData) external payable returns (uint256)',
+        'function createPosition(address lp, address user, uint256 wETHAmount, uint256 wsxmrAmount, uint256 deadline) external returns (uint256)',
+        'function createPositionWithPriceUpdate(address lp, address user, uint256 wETHAmount, uint256 wsxmrAmount, uint256 deadline, bytes[] calldata oracleUpdateData) external payable returns (uint256)',
         'function closePosition(uint256 positionIndex, uint256 deadline, uint256 minTotalValueUSD) external',
         'function collectFees(uint256 positionIndex) external',
         'function withdrawFees() external',
@@ -391,11 +391,11 @@ export const ABIS = {
         'function userApprovalAmount(address user, address lp) external view returns (uint256)',
         'function activePositionCount(address account) external view returns (uint256)',
         // Events
-        'event PositionCreated(uint256 indexed positionIndex, uint256 dexTokenId, address indexed lp, address indexed user, uint256 sDAIAmount, uint256 wsxmrAmount)',
-        'event PositionClosed(uint256 indexed positionIndex, uint256 sDAIReturned, uint256 wsxmrReturned)',
+        'event PositionCreated(uint256 indexed positionIndex, uint256 dexTokenId, address indexed lp, address indexed user, uint256 wETHAmount, uint256 wsxmrAmount)',
+        'event PositionClosed(uint256 indexed positionIndex, uint256 wETHReturned, uint256 wsxmrReturned)',
         'event LpApprovedUser(address indexed lp, address indexed user, uint256 amount)',
         'event UserApprovedLp(address indexed user, address indexed lp, uint256 amount)',
-        'event ILSDAICredited(address indexed user, uint256 amount, uint256 positionIndex)',
+        'event ILWETHCredited(address indexed user, uint256 amount, uint256 positionIndex)',
         'event ILWsxmrCredited(address indexed lp, uint256 amount, uint256 positionIndex)'
     ],
 
