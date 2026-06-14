@@ -7,7 +7,7 @@ import {
   prepareReportRequest,
   bytesToHex,
   handler,
-  LAST_FINALIZED_BLOCK_NUMBER,
+  LATEST_BLOCK_NUMBER,
   type Runtime,
 } from "@chainlink/cre-sdk"
 import {
@@ -69,6 +69,11 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
     args: [BigInt(cfg.scanStartIndex), BigInt(cfg.scanCount)],
   })
 
+  // Use latest, not finalized: on L2 testnets (e.g. Base Sepolia) the finalized
+  // tag can lag hundreds of blocks behind head. A freshly deployed demo hub
+  // won't exist at the finalized height yet → eth_call returns 0x and viem
+  // errors "Cannot decode zero data". Liquidation detection needs current CR
+  // anyway; the registry re-validates on-chain before emitting.
   const call = evmClient
     .callContract(runtime, {
       call: encodeCallMsg({
@@ -76,7 +81,7 @@ const onCronTrigger = (runtime: Runtime<Config>): string => {
         to: cfg.hubAddress as Address,
         data: callData,
       }),
-      blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
+      blockNumber: LATEST_BLOCK_NUMBER,
     })
     .result()
 
