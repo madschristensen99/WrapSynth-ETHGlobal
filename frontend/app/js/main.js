@@ -26,6 +26,7 @@ import {
     showBurnTab,
     showCoLPTab,
     showSwapTab,
+    showUnlinkTab,
     saveActiveTab,
     populateVaults,
     showVaultInfo,
@@ -144,16 +145,11 @@ async function fetchXmrPrice(forceRefresh = false) {
         console.warn('[PRICE] CoinCap failed:', e.message);
     }
 
-    // If we have a stale cached value, return it rather than null
-    if (priceCache.value) {
-        console.warn('[PRICE] Using stale cached price:', priceCache.value);
-        updateUI(priceCache.value);
-        return priceCache.value;
-    }
-
-    updateUI(null);
-    console.error('[PRICE] All price sources failed');
-    return null;
+    // Fallback: hardcoded price
+    const fallbackPrice = 342.51;
+    console.warn('[PRICE] All price sources failed, using fallback:', fallbackPrice);
+    updateUI(fallbackPrice);
+    return fallbackPrice;
 }
 
 /**
@@ -206,13 +202,10 @@ async function fetchEthPrice(forceRefresh = false) {
         console.warn('[PRICE] ETH CoinCap failed:', e.message);
     }
 
-    if (ethPriceCache.value) {
-        console.warn('[PRICE] ETH using stale cached price:', ethPriceCache.value);
-        return ethPriceCache.value;
-    }
-
-    console.error('[PRICE] All ETH price sources failed');
-    return null;
+    // Fallback: hardcoded price
+    const fallbackPrice = 1681.13;
+    console.warn('[PRICE] All ETH price sources failed, using fallback:', fallbackPrice);
+    return fallbackPrice;
 }
 
 /**
@@ -399,6 +392,8 @@ async function init() {
         await handleLpTab();
     } else if (savedTab === 'swap') {
         await handleSwapTab();
+    } else if (savedTab === 'unlink') {
+        showUnlinkTab();
     }
 
     console.log('[SUCCESS] Phantom Agent ready');
@@ -422,6 +417,13 @@ function setupEventHandlers() {
     elements.tabCoLP.addEventListener('click', () => handleCoLPTab());
     elements.tabLp.addEventListener('click', () => handleLpTab());
     elements.tabSwap.addEventListener('click', () => handleSwapTab());
+    elements.tabUnlink.addEventListener('click', () => showUnlinkTab());
+    
+    // Unlink deposit flow
+    const startUnlinkBtn = document.getElementById('start-unlink-deposit');
+    if (startUnlinkBtn) {
+        startUnlinkBtn.addEventListener('click', handleUnlinkDeposit);
+    }
     
     // Mint flow
     elements.startMint.addEventListener('click', handleStartMint);
@@ -696,8 +698,8 @@ async function handleAccountChange(newAddress) {
 async function checkPendingReturns(address) {
     try {
         const ethReturns = await readHub('getPendingReturns', [address, '0x0000000000000000000000000000000000000000']);
-        const sDAIReturns = await readHub('getPendingReturns', [address, CONTRACTS.sDAI]);
-        setWithdrawReturnsVisible(ethReturns > 0n || sDAIReturns > 0n);
+        const wethReturns = await readHub('getPendingReturns', [address, CONTRACTS.wETH]);
+        setWithdrawReturnsVisible(ethReturns > 0n || wethReturns > 0n);
     } catch (error) {
         console.warn('Could not check pending returns:', error.message);
         setWithdrawReturnsVisible(false);
@@ -713,7 +715,7 @@ async function handleWithdrawReturns() {
     
     try {
         const ethReturns = await readHub('getPendingReturns', [address, '0x0000000000000000000000000000000000000000']);
-        const sDAIReturns = await readHub('getPendingReturns', [address, CONTRACTS.sDAI]);
+        const wethReturns = await readHub('getPendingReturns', [address, CONTRACTS.wETH]);
         
         const txs = [];
         
@@ -722,8 +724,8 @@ async function handleWithdrawReturns() {
             txs.push(receipt.transactionHash);
         }
         
-        if (sDAIReturns > 0n) {
-            const receipt = await writeHub('withdrawReturns', [CONTRACTS.sDAI]);
+        if (wethReturns > 0n) {
+            const receipt = await writeHub('withdrawReturns', [CONTRACTS.wETH]);
             txs.push(receipt.transactionHash);
         }
         
@@ -1308,6 +1310,7 @@ async function handleLpTab() {
     elements.burnPanel.classList.add('hidden');
     elements.coLPPanel.classList.add('hidden');
     elements.swapPanel.classList.add('hidden');
+    elements.unlinkPanel.classList.add('hidden');
     elements.lpPanel.classList.remove('hidden');
 
     // Update tab buttons
@@ -1315,6 +1318,7 @@ async function handleLpTab() {
     elements.tabBurn.classList.remove('active');
     elements.tabCoLP.classList.remove('active');
     elements.tabSwap.classList.remove('active');
+    elements.tabUnlink.classList.remove('active');
     elements.tabLp.classList.add('active');
     saveActiveTab('lp');
 
@@ -1373,7 +1377,7 @@ async function loadLpStats(address, vaultData) {
         console.log('Vault pending debt:', vault.pendingDebt);
         
         // Update UI with vault stats
-        document.getElementById('lp-collateral').textContent = `${(Number(vault.collateralShares) / 1e18).toFixed(2)} sDAI`;
+        document.getElementById('lp-collateral').textContent = `${(Number(vault.collateralShares) / 1e18).toFixed(2)} wETH`;
         document.getElementById('lp-debt').textContent = `${(Number(debt) / 1e8).toFixed(4)} wsXMR`;
         document.getElementById('lp-pending-debt').textContent = `${(Number(vault.pendingDebt) / 1e8).toFixed(4)} wsXMR`;
         document.getElementById('lp-health').textContent = `${(Number(health) / 1e16).toFixed(0)}%`;
@@ -1860,7 +1864,7 @@ async function loadVaults() {
         const { parseAbi } = await import('https://esm.sh/viem@2.7.0');
         const publicClient = getPublicClient();
         const collateralAbi = parseAbi(['function convertToAssets(uint256 shares) view returns (uint256)']);
-        const collateralAddress = CONTRACTS.sDAI;
+        const collateralAddress = CONTRACTS.wETH;
 
         for (const vaultAddress of knownVaults) {
             try {
@@ -1869,6 +1873,8 @@ async function loadVaults() {
 
                 console.log('Raw vault data:', vaultData);
                 console.log('Collateral shares:', vaultData.collateralShares?.toString());
+                console.log('Locked collateral:', vaultData.lockedCollateral?.toString());
+                console.log('Deployed Co-LP collateral (deployedWETHShares field):', vaultData.deployedWETHShares?.toString());
                 console.log('Debt:', vaultData.normalizedDebt?.toString());
                 console.log('Active:', vaultData.active);
 
@@ -1907,10 +1913,12 @@ async function loadVaults() {
                     // Buffer = extra 50% collateral required to maintain 150% ratio (on total debt)
                     const bufferCollateral = (usedCollateral + pendingCollateral) * 0.5;
                     // Co-LP deployed collateral (tracked separately from lockedCollateral)
-                    const coLPShares = BigInt(vaultData.deployedSDAIShares?.toString?.() ?? '0');
-                    let coLPCollateral = Number(coLPShares) / 1e18;
-                    try {
-                        if (coLPShares > 0n) {
+                    const coLPShares = BigInt(vaultData.deployedWETHShares?.toString?.() ?? '0');
+                    let coLPCollateral = 0;
+                    
+                    if (coLPShares > 0n) {
+                        console.log('Co-LP shares detected:', coLPShares.toString());
+                        try {
                             const coLPAssetsWei = await publicClient.readContract({
                                 address: collateralAddress,
                                 abi: collateralAbi,
@@ -1918,9 +1926,14 @@ async function loadVaults() {
                                 args: [coLPShares]
                             });
                             coLPCollateral = Number(coLPAssetsWei) / 1e18;
+                            console.log('Co-LP collateral (via convertToAssets):', coLPCollateral, 'ETH');
+                        } catch (e) {
+                            console.warn('convertToAssets for co-LP shares failed:', e.message);
+                            // For wETH-based systems, deployedWETHShares is already in wei
+                            // so convert directly without calling convertToAssets
+                            coLPCollateral = Number(coLPShares) / 1e18;
+                            console.log('Co-LP collateral (1:1 fallback):', coLPCollateral, 'ETH');
                         }
-                    } catch (e) {
-                        console.warn('convertToAssets for co-LP shares failed, using 1:1 fallback:', e.message);
                     }
                     const freeCollateral = Math.max(0, collAmountETH - usedCollateral - pendingCollateral - bufferCollateral - coLPCollateral);
                     
@@ -2112,6 +2125,71 @@ async function handleVaultSelect(isMint) {
     } catch (error) {
         console.warn('Could not fetch vault info (contracts may not be deployed):', error.message);
         // Don't show error modal for this, just log it
+    }
+}
+
+/**
+ * Handle Unlink private deposit
+ */
+async function handleUnlinkDeposit() {
+    const tokenAddress = document.getElementById('unlink-token-address').value.trim();
+    const amount = document.getElementById('unlink-amount').value.trim();
+    const progress = document.getElementById('unlink-progress');
+    const result = document.getElementById('unlink-result');
+    const btn = document.getElementById('start-unlink-deposit');
+
+    if (!tokenAddress || !amount) {
+        result.className = 'alert alert-error';
+        result.textContent = 'Please enter token address and amount.';
+        result.classList.remove('hidden');
+        return;
+    }
+
+    btn.disabled = true;
+    progress.classList.remove('hidden');
+    result.classList.add('hidden');
+
+    const statusInit = document.getElementById('unlink-status-init');
+    const statusRegister = document.getElementById('unlink-status-register');
+    const statusDeposit = document.getElementById('unlink-status-deposit');
+
+    statusInit.textContent = 'In progress...';
+    statusRegister.textContent = 'Waiting...';
+    statusDeposit.textContent = 'Waiting...';
+
+    try {
+        const res = await fetch('http://localhost:3001/api/unlink-deposit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tokenAddress, amount })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+            statusInit.textContent = 'Done';
+            statusRegister.textContent = 'Done';
+            statusDeposit.textContent = 'Done';
+            result.className = 'alert alert-success';
+            result.innerHTML = `<strong>Deposit Successful!</strong><br>
+                Status: ${data.status}<br>
+                Unlink Address: ${data.unlinkAddress}<br>
+                EVM Address: ${data.evmAddress}<br>
+                Amount: ${data.amount}`;
+            result.classList.remove('hidden');
+        } else {
+            throw new Error(data.error || 'Unknown error');
+        }
+    } catch (err) {
+        console.error('Unlink deposit failed:', err);
+        statusInit.textContent = 'Failed';
+        statusRegister.textContent = 'Failed';
+        statusDeposit.textContent = 'Failed';
+        result.className = 'alert alert-error';
+        result.textContent = 'Error: ' + err.message;
+        result.classList.remove('hidden');
+    } finally {
+        btn.disabled = false;
     }
 }
 

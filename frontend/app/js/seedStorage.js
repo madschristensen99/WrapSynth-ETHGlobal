@@ -7,7 +7,7 @@
 // - Requires BOTH browser access AND wallet signature to decrypt
 
 import { keccak256, hexToBytes, bytesToHex } from 'https://esm.sh/viem@2.7.0';
-import { getWalletClient, getUserAddress } from './viemClient.js';
+import { getUserAddress } from './viemClient.js';
 
 const DB_NAME = 'WrapSynth';
 const STORE_NAME = 'keys';
@@ -89,13 +89,18 @@ export async function storeSeed(seed, publicSpendKey) {
     try {
         // Request signature from user
         const message = `WrapSynth seed storage: ${storageKey}`;
-        const walletClient = getWalletClient();
         
         console.log('Requesting signature to encrypt seed...');
-        const signature = await walletClient.signMessage({
-            account: userAddress,
-            message: message
+        console.log('User address:', userAddress);
+        console.log('Message to sign:', message);
+        
+        // Use ethereum provider directly for personal_sign to ensure MetaMask prompt appears
+        const signature = await window.ethereum.request({
+            method: 'personal_sign',
+            params: [message, userAddress]
         });
+        
+        console.log('Signature received:', signature);
 
         // Derive encryption key from signature
         const keySeed = keccak256(signature);
@@ -165,12 +170,12 @@ export function hasStoredSeed(publicSpendKey) {
  * @returns {Promise<string|null>} Decrypted seed phrase or null if not found
  */
 async function tryDecryptSeed(stored, message, userAddress) {
-    const walletClient = getWalletClient();
-
     console.log('Requesting signature to decrypt seed...');
-    const signature = await walletClient.signMessage({
-        account: userAddress,
-        message: message
+    
+    // Use ethereum provider directly for personal_sign to ensure MetaMask prompt appears
+    const signature = await window.ethereum.request({
+        method: 'personal_sign',
+        params: [message, userAddress]
     });
 
     // Derive decryption key from signature

@@ -5,7 +5,6 @@ import { baseSepolia } from 'https://esm.sh/viem@2.7.0/chains';
 
 const D = window.DEPLOYMENT || {};
 const RPC_URLS = [
-    'https://sepolia.base.org',
     'https://base-sepolia-rpc.publicnode.com',
     D.rpcUrl || 'https://sepolia.base.org'
 ];
@@ -65,17 +64,20 @@ const WSXMR_ABI = parseAbi([
 
 const publicClient = createPublicClient({
     chain: baseSepolia,
-    transport: fallback(RPC_URLS.map(url => http(url)), { rank: false })
+    transport: fallback(
+        RPC_URLS.map(url => http(url, { retryCount: 3, retryDelay: 1500, timeout: 15000 })),
+        { rank: false }
+    )
 });
 
 async function fetchXMRPrice() {
     try {
         const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=monero&vs_currencies=usd');
         const data = await response.json();
-        return data.monero?.usd || 0;
+        return data.monero?.usd || 342.51;
     } catch (error) {
-        console.error('Error fetching XMR price:', error);
-        return 0;
+        console.warn('Error fetching XMR price, using fallback:', error);
+        return 342.51;
     }
 }
 

@@ -77,10 +77,10 @@ export const NETWORKS = {
         },
         rpcUrls: {
             default: {
-                http: ['https://sepolia.base.org', 'https://base-sepolia-rpc.publicnode.com'],
+                http: ['https://base-sepolia-rpc.publicnode.com', 'https://sepolia.base.org'],
             },
             public: {
-                http: ['https://sepolia.base.org', 'https://base-sepolia-rpc.publicnode.com'],
+                http: ['https://base-sepolia-rpc.publicnode.com', 'https://sepolia.base.org'],
             },
         },
         blockExplorers: {
@@ -105,7 +105,7 @@ export const DEPLOYMENTS = {
         liquidationFacet: DF.LiquidationFacet || '0x6FA84E83694002aBfA6fc198F430A14f96FdaA54',
         yieldFacet: DF.YieldFacet || '0xA676e2dC47F6B2639F54094190783bcbA8080947',
         liquidityRouter: DC.liquidityRouter || '0x6893f38e1DeEdCa95ce8995B01550921cEe353a1',
-        sDAI: DE.sDAI || '0xaf204776c7245bF4147c2612BF6e5972Ee483701',
+        wETH: '0x4200000000000000000000000000000000000006',
         pythOracle: DE.PythOracle || '0x2880aB155794e7179c9eE2e38200202908C17B43',
         ed25519Helper: DE.Ed25519Helper || '0xaECa36374039EAb9e267B5daa48bAb9Ab0e50F00',
         initialMoneroBlock: 3607954,
@@ -115,7 +115,7 @@ export const DEPLOYMENTS = {
         chainId: 1301,
         wrappedMonero: '0xC67Cf54d14078ff2968b4Fcd55331C48CEf69eeF',
         plonkVerifier: '0x...', // Add when deployed
-        sDAI: '0xc02fe7317d4eb8753a02c35fe019786854a92001', // Placeholder for testnet
+        wETH: '0x4200000000000000000000000000000000000006',
         pythOracle: '0x2880aB155794e7179c9eE2e38200202908C17B43',
         initialMoneroBlock: 3605079,
         deployedAt: null,
@@ -131,7 +131,7 @@ export const DEPLOYMENTS = {
         liquidationFacet: DF.LiquidationFacet || '0x42d2cc6db9b495d85922e95d90815f2244567c56',
         yieldFacet: DF.YieldFacet || '0x2ed9cc036bba0d976847367a378e6d8e0d3ca19a',
         liquidityRouter: DC.liquidityRouter || '0x0F9172c037eC5dFFa940aFa357Ee0A52B5a08d71',
-        sDAI: DE.sDAI || '0x57cA07e0443c7Dc720CAd8AF63D8a6bBeDabD202',
+        wETH: '0x4200000000000000000000000000000000000006',
         chainlinkVerifierProxy: DE.chainlinkVerifierProxy || '0x8Ac491b7c118a0cdcF048e0f707247fD8C9575f9',
         linkToken: DE.linkToken || '0xE4aB69C077896252FAFBD49EFD26B5D171A32410',
         ed25519Helper: DE.Ed25519Helper || '0x8D7DD0A1FD26A2602837B028afB7A1f1b21DA9E7',

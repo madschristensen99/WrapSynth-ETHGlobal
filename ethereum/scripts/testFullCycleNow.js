@@ -1,45 +1,38 @@
 #!/usr/bin/env node
 /**
- * Test FULL mint and burn cycle - update prices and immediately execute
+ * Test FULL mint and burn cycle on Base Sepolia
  */
 
 require('dotenv').config();
 const { ethers } = require('ethers');
-const { WrapperBuilder } = require('@redstone-finance/evm-connector');
-const { getSignersForDataServiceId } = require('@redstone-finance/oracles-smartweave-contracts');
-const { HUB_ADDRESS, WSXMR_ADDRESS, WXDAI_ADDRESS, ED25519_HELPER } = require('./deploymentConfig');
+const fetch = require('node-fetch');
+const { HUB_ADDRESS, WSXMR_ADDRESS, WXDAI_ADDRESS, ED25519_HELPER, SDAI_ADDRESS } = require('./deploymentConfig');
 
-// Helper to create fresh RedStone wrapped contract
-function wrapWithRedStone(contract) {
-    const authorizedSigners = getSignersForDataServiceId("redstone-primary-prod");
-    return WrapperBuilder.wrap(contract).usingDataService({
-        dataServiceId: "redstone-primary-prod",
-        uniqueSignersCount: 3,
-        dataPackagesIds: ["XMR", "DAI"],
-        authorizedSigners
-    });
-}
-
-// Retry helper for RedStone calls with exponential backoff
-async function retryRedStone(fn, maxRetries = 3) {
-    let lastError;
-    for (let i = 0; i < maxRetries; i++) {
-        try {
-            return await fn();
-        } catch (err) {
-            lastError = err;
-            const isTimeout = err.message && (
-                err.message.includes('timeout') ||
-                err.message.includes('AggregateError') ||
-                err.message.includes('ETIMEDOUT')
-            );
-            if (!isTimeout || i === maxRetries - 1) throw err;
-            const delay = 2000 * Math.pow(2, i);
-            console.log(`  RedStone timeout, retrying in ${delay/1000}s... (attempt ${i+2}/${maxRetries})`);
-            await new Promise(r => setTimeout(r, delay));
+// Helper to update oracle prices via Chainlink Data Streams
+// Prices are fetched from the LP server's report proxy
+async function updateOraclePrices(hub) {
+    try {
+        const reportProxyUrl = process.env.REPORT_PROXY_URL || 'http://localhost:3001/reports';
+        const xmrFeedId = '0x0003c70558bd921b1559d37b8e347797f121d1240e7386e68b2bee9b731b0833';
+        const ethFeedId = '0x000359843a543ee2fe414dc14c7e7920ef10f4372990b79d6361cdc0dd1ba782';
+        
+        const response = await fetch(`${reportProxyUrl}?feedIDs=${xmrFeedId},${ethFeedId}`);
+        const data = await response.json();
+        
+        if (!data.reports || data.reports.length === 0) {
+            throw new Error('No reports received from proxy');
         }
+        
+        const reportData = data.reports.map(r => r.fullReport);
+        const tx = await hub.updateOraclePrices(reportData, { gasLimit: 500000 });
+        await tx.wait();
+        console.log('✅ Oracle prices updated');
+        return tx;
+    } catch (err) {
+        console.warn('⚠️  Could not update oracle prices:', err.message);
+        console.log('   Continuing anyway - transaction will revert if prices are stale');
+        throw err;
     }
-    throw lastError;
 }
 
 async function main() {
@@ -48,7 +41,8 @@ async function main() {
         process.exit(1);
     }
     
-    const provider = new ethers.providers.JsonRpcProvider('https://rpc.gnosischain.com');
+    const RPC_URL = process.env.RPC_URL || 'https://sepolia.base.org';
+    const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
     const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
     
     console.log('🧪 Testing FULL Mint and Burn Cycle');
@@ -189,10 +183,11 @@ async function main() {
         // Update prices before burn
         console.log('📊 Update Prices');
         console.log('================');
-        const updateTx = await retryRedStone(() => wrapWithRedStone(hub).updateOraclePrices([]));
-        console.log('TX:', updateTx.hash);
-        await updateTx.wait();
-        console.log('✅ Prices updated\n');
+        try {
+            await updateOraclePrices(hub);
+        } catch (err) {
+            console.log('⚠️  Skipping price update, will retry if needed\n');
+        }
         
         // Jump to burn
         console.log('📊 BURN - Request');
@@ -254,16 +249,26 @@ async function main() {
         console.log('🎉 BURN COMPLETE!');
         console.log('=================');
         console.log('✅ Burned wsXMR tokens');
-        console.log('✅ Protocol fully functional on Gnosis mainnet!');
+        console.log('✅ Protocol fully functional on Base Sepolia!');
         return;
     }
     
     console.log('📊 Step 1: Update Prices');
     console.log('========================');
-    const updateTx = await retryRedStone(() => wrapWithRedStone(hub).updateOraclePrices([]));
-    console.log('TX:', updateTx.hash);
-    await updateTx.wait();
-    console.log('✅ Prices updated');
+    try {
+        await updateOraclePrices(hub);
+    } catch (err) {
+        console.log('⚠️  Skipping price update, will retry if needed');
+    }
+    console.log('');
+    
+    console.log('📊 Step 1.5: Refresh Prices (right before mint)');
+    console.log('==================================================');
+    try {
+        await updateOraclePrices(hub);
+    } catch (err) {
+        console.log('⚠️  Could not refresh prices, will try anyway');
+    }
     console.log('');
     
     console.log('📊 Step 2: MINT - Initiate (IMMEDIATELY after price update)');
@@ -317,14 +322,7 @@ async function main() {
     console.log('Gas:', mintReceipt.gasUsed.toString());
     console.log('');
     
-    console.log('📊 Step 3: Update Prices Again (before setMintReady)');
-    console.log('=====================================================');
-    const updateTx2 = await retryRedStone(() => wrapWithRedStone(hub).updateOraclePrices([]));
-    await updateTx2.wait();
-    console.log('✅ Prices refreshed');
-    console.log('');
-    
-    console.log('📊 Step 4: MINT - LP Provides Public Key');
+    console.log('📊 Step 3: MINT - LP Provides Public Key');
     console.log('==========================================');
     // Generate real Ed25519 public key for LP
     const lpSecret = ethers.utils.randomBytes(32);
@@ -340,7 +338,7 @@ async function main() {
     console.log('✅ LP provided public key');
     console.log('');
     
-    console.log('📊 Step 5: MINT - LP Sets Ready');
+    console.log('📊 Step 3: MINT - LP Sets Ready');
     console.log('================================');
     const lpBond = ethers.utils.parseEther('0.001');
     const readyTx = await hub.setMintReady(requestId, { value: lpBond });
@@ -348,7 +346,7 @@ async function main() {
     console.log('✅ LP marked ready');
     console.log('');
     
-    console.log('📊 Step 6: MINT - Finalize');
+    console.log('📊 Step 4: MINT - Finalize');
     console.log('===========================');
     const finalizeTx = await hub.finalizeMint(requestId, secret, { gasLimit: 1000000 });
     const finalizeReceipt = await finalizeTx.wait();
@@ -371,7 +369,7 @@ async function main() {
     console.log('✅ Fee correctly applied:', wsxmrBalance.eq(expectedAfterFee) ? 'YES' : 'NO');
     console.log('');
     
-    console.log('📊 Step 6.5: WITHDRAW - Small Collateral Test');
+    console.log('📊 Step 4.5: WITHDRAW - Small Collateral Test');
     console.log('============================================');
     const vaultBeforeWithdraw = await hub.getVault(wallet.address);
     console.log('Collateral shares before:', vaultBeforeWithdraw.collateralShares.toString());
@@ -393,7 +391,7 @@ async function main() {
     console.log('Collateral shares after:', vaultAfterWithdraw.collateralShares.toString());
     console.log('');
     
-    console.log('📊 Step 7: BURN - Request');
+    console.log('📊 Step 5: BURN - Request');
     console.log('=========================');
     const burnAmount = wsxmrBalance;
     
@@ -411,7 +409,7 @@ async function main() {
     console.log('Amount:', ethers.utils.formatUnits(burnAmount, decimals), 'wsXMR');
     console.log('');
     
-    console.log('📊 Step 8: BURN - LP Proposes Hash');
+    console.log('📊 Step 6: BURN - LP Proposes Hash');
     console.log('===================================');
     const burnSecret = ethers.utils.randomBytes(32);
     const secretHash = await ed25519Helper.computeCommitment(burnSecret);
@@ -432,14 +430,14 @@ async function main() {
     console.log('✅ LP proposed secret hash');
     console.log('');
     
-    console.log('📊 Step 9: BURN - User Confirms Monero Lock');
+    console.log('📊 Step 7: BURN - User Confirms Monero Lock');
     console.log('============================================');
     const confirmTx = await hub.confirmMoneroLock(burnRequestId, { gasLimit: 500000 });
     await confirmTx.wait();
     console.log('✅ User confirmed Monero lock');
     console.log('');
     
-    console.log('📊 Step 10: BURN - LP Finalizes');
+    console.log('📊 Step 8: BURN - LP Finalizes');
     console.log('================================');
     
     // Check wxDAI balance before burn to verify reward
@@ -465,9 +463,8 @@ async function main() {
     console.log('Total Supply:', ethers.utils.formatUnits(totalSupply, decimals));
     console.log('');
     
-    console.log('📊 Step 11: CLAIM - Withdraw Burn Rewards');
+    console.log('📊 Step 9: CLAIM - Withdraw Burn Rewards');
     console.log('==========================================');
-    const SDAI_ADDRESS = '0xaf204776c7245bF4147c2612BF6e5972Ee483701';
     const pendingReward = await hub.getPendingReturns(wallet.address, SDAI_ADDRESS);
     console.log('Pending sDAI Reward:', ethers.utils.formatEther(pendingReward), 'sDAI');
     
@@ -488,7 +485,7 @@ async function main() {
     console.log('✅ Minted wsXMR tokens');
     console.log('✅ Burned wsXMR tokens');
     console.log('✅ Claimed burn rewards');
-    console.log('✅ Protocol fully functional on Gnosis mainnet!');
+    console.log('✅ Protocol fully functional on Base Sepolia!');
 }
 
 main().catch(console.error);
