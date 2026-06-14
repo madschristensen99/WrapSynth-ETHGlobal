@@ -8,8 +8,8 @@
 // the input token. Reads use a dedicated Base Sepolia client; every tx is hard-pinned to
 // Base Sepolia (_assertOnBaseSepolia) so nothing leaks onto Gnosis.
 
-import { UNISWAP_CONFIG } from './config.js?v=20260617';
-import { saveToHistory } from './storage.js?v=20260617';
+import { UNISWAP_CONFIG } from './config.js?v=20260613mig';
+import { saveToHistory } from './storage.js?v=20260613mig';
 
 // ─── viem (dynamic import) ──────────────────────────────────────────────────────
 let _viemPromise = null;
@@ -104,8 +104,8 @@ function feePct(fee) { return `${(fee / 10000).toFixed(2)}%`; }
 class SwapFlow {
     constructor() {
         this._initialized = false;
-        this.fromKey = 'tWSXMR';
-        this.toKey = 'USDC';
+        this.fromKey = 'wsXMR';
+        this.toKey = 'WETH';
         this.quoteOut = null;       // bigint output amount (toToken decimals)
         this.currentRoute = null;
         this.fromBalance = 0n;

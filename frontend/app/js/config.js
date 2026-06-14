@@ -68,7 +68,7 @@ export const LP_SERVER_CONFIG = {
 // The Swap tab talks DIRECTLY to the on-chain Uniswap V3 contracts (QuoterV2 +
 // SwapRouter02) — NOT the Trading API. The Trading API returns 404 ResourceNotFound
 // for custom Base Sepolia pools (its routing backend doesn't index them), so it cannot
-// quote tWSXMR↔WETH on testnet. The on-chain pool exists and is seeded, so we route
+// quote wsXMR↔WETH on testnet. The on-chain pool exists and is seeded, so we route
 // through it ourselves. (proxy/ + swap-test/ remain in the repo for a future mainnet path.)
 export const UNISWAP_CONFIG = {
     chainId: 84532,
@@ -85,14 +85,14 @@ export const UNISWAP_CONFIG = {
     weth:         '0x4200000000000000000000000000000000000006',
     slippageBps:  50,    // 0.5% default slippage
 
-    tWSXMR: '0xdC8A3309e384d4b669feB350F97204c3e8404477',
+    wsXMR: '0x81AaB8b92b38d0ab60B99b4aF12edaEE92b9C0C4',
 
     // Token registry for omni-token swaps. WETH is the routing hub: every non-WETH token
     // carries `wethPoolFee` = the fee tier of its WETH pool on Base Sepolia. Trades are
     // single-hop when one side is WETH, else multi-hop via WETH. To add a token, append an
     // entry whose WETH pool actually has liquidity at the given `wethPoolFee`.
     tokens: {
-        tWSXMR: { address: '0xdC8A3309e384d4b669feB350F97204c3e8404477', symbol: 'tWSXMR', decimals: 8,  name: 'Test Wrapped Scaled XMR', wethPoolFee: 100 },
+        wsXMR:  { address: '0x81AaB8b92b38d0ab60B99b4aF12edaEE92b9C0C4', symbol: 'wsXMR', decimals: 8,  name: 'Wrapsynth Monero', wethPoolFee: 3000 },
         WETH:   { address: '0x4200000000000000000000000000000000000006', symbol: 'WETH',   decimals: 18, name: 'Wrapped Ether', isWeth: true },
         USDC:   { address: '0x036CbD53842c5426634e7929541eC2318f3dCF7e', symbol: 'USDC',   decimals: 6,  name: 'USD Coin', wethPoolFee: 3000 },
     },

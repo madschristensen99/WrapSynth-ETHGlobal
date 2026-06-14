@@ -319,7 +319,8 @@ export class MintFlow {
         } catch (error) {
             const isStalePrice = error.message && (
                 error.message.includes('0x19abf40e') ||
-                error.message.includes('StalePrice')
+                error.message.includes('StalePrice') ||
+                error.message.includes('InvalidValue')
             );
 
             if (isStalePrice) {

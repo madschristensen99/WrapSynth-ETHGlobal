@@ -37,10 +37,11 @@
   },
   "pool": {
     "uniswapV3Pool": "0x79cF96e0FA6aBE3cF02994B35c68A69359857Ae9",
-    "feeTier": 3000
+    "feeTier": 3000,
+    "wsxmrWethSwapPool": "0xf34e4c3289187aDd920E8c5db3590D482ed4E3E9"
   },
   "lpConfig": {
-    "defaultLpVault": "0x492c0b9F298cC49FE2644a2EBc6eA8dF848c72FB",
+    "defaultLpVault": "0x15d265Dc32a575755ACA19b5EcEAB8018CdD26F1",
     "apiPort": 3001,
     "minCollateralRatio": 150,
     "liquidationThreshold": 120,
